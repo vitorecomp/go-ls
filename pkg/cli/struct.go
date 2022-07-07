@@ -34,24 +34,24 @@ type CLI struct {
 	Ignore         string `help:"do not list implied entries matching shell PATTERN" name:"ignore" short:"I"`
 	Base2Size      bool   `help:"default to 1024-byte blocks for disk usage; used only with -s and per directory totals" name:"kibibytes" short:"k"`
 
-	List             bool   `help:" use a long listing format " name:"list" short:"l"`
-	ShowLinks        bool   `help:"when showing file information for a symbolic link, show information for the file the link references rather than for the link itself" name:"dereference" short:"L"`
-	CommaSeparated   bool   `help:"fill width with a comma separated list of entries" short:"m"`
-	NumericUUID      bool   `help:"like -l, but list numeric user and group IDs" name:"numeric-uid-gid" short:"n"`
-	Literal          bool   `help:"print entry names without quoting" name:"literal" short:"N"`
-	NoGroupInfo      bool   `help:"like -l, but do not list group information" short:"o"`
-	IndicatorStyle   bool   `help:" append / indicator to directories" name:"indicator-style" default:"slash" short:"p"`
-	HideControlChars bool   `help:"print ? instead of nongraphic characters" name:"hide-control-chars" short:"q"`
-	ShowControlChars bool   `help:"show nongraphic characters as-is (the default,unless program is 'ls' and output is a terminal)" name:"show-control-chars"`
-	QuoteName        bool   `help:"enclose entry names in double quotes" name:"quote-name" short:"Q"`
-	QuoteStyle       string ` enum:"literal, locale, shell, shell-always, shell-escape, shell-escape-always, c, escape" help:"use quoting style WORD for entry names: literal, locale, shell, shell-always, shell-escape, shell-escape-always, c, escape (overrides QUOTING_STYLE environment variable)" name:"quote-style"`
-	Reverse          bool   `help:"reverse order while sorting" name:"reverse" short:"r"`
+	List               bool   `help:" use a long listing format " name:"list" short:"l"`
+	ShowLinks          bool   `help:"when showing file information for a symbolic link, show information for the file the link references rather than for the link itself" name:"dereference" short:"L"`
+	CommaSeparated     bool   `help:"fill width with a comma separated list of entries" short:"m"`
+	NumericUUID        bool   `help:"like -l, but list numeric user and group IDs" name:"numeric-uid-gid" short:"n"`
+	Literal            bool   `help:"print entry names without quoting" name:"literal" short:"N"`
+	NoGroupInfo        bool   `help:"like -l, but do not list group information" short:"o"`
+	IndicatorStyleFlag bool   `help:" append / indicator to directories" short:"p"`
+	HideControlChars   bool   `help:"print ? instead of nongraphic characters" name:"hide-control-chars" short:"q"`
+	ShowControlChars   bool   `help:"show nongraphic characters as-is (the default,unless program is 'ls' and output is a terminal)" name:"show-control-chars"`
+	QuoteName          bool   `help:"enclose entry names in double quotes" name:"quote-name" short:"Q"`
+	QuoteStyle         string `default:"literal" enum:"literal, locale, shell, shell-always, shell-escape, shell-escape-always, c, escape" help:"use quoting style WORD for entry names: literal, locale, shell, shell-always, shell-escape, shell-escape-always, c, escape (overrides QUOTING_STYLE environment variable)" name:"quote-style"`
+	Reverse            bool   `help:"reverse order while sorting" name:"reverse" short:"r"`
 
 	Recursive  bool   `help:"recursive list subdirectories recursively;" short:"R"`
 	Size       bool   `help:"print the allocated size of each file, in blocks;" short:"s" name:"size"`
 	SortBySize bool   `help:"sort by file size, largest first;" short:"S"`
 	Sort       string `enum:"none, size, time, version, extension" default:"none" help:"sort by WORD instead of name: none (-U), size (-S),time (-t), version (-v), extension (-X);" name:"sort"`
-	Time       string `enum:"atime, acess, use, ctime, status, birth, creation" help:"change the default of using modification times; access time (-u): atime, access, use; change time (-c): ctime, status birth time: birth, creation; with -l, WORD determines which time to show; with --sort=time, sort by WORD (newest first)" name:"time"`
+	Time       string `default:"creation" enum:"atime, acess, use, ctime, status, birth, creation" help:"change the default of using modification times; access time (-u): atime, access, use; change time (-c): ctime, status birth time: birth, creation; with -l, WORD determines which time to show; with --sort=time, sort by WORD (newest first)" name:"time"`
 	TimeStyle  string `help:"time/date format with -l; see TIME_STYLE below;" name:"time-style"`
 	SortByTime bool   `help:"sort by time, newest first; see --time;" short:"t"`
 	TabSize    int    `help:"assume tab stops at each COLS instead of 8;" short:"T" name:"tabsize"`
@@ -70,7 +70,7 @@ type CLI struct {
 
 	output string `enum:"console,database,file" default:"console" name:"output"`
 	DBConn string `help:"Db connection string." name:"db-connection"`
-	DBType string `help:"Db connection string." name:"db-type"`
+	DBType string `help:"Db type." name:"db-type"`
 
 	Paths []string `arg:"" optional:"" name:"path" help:"Paths to list." type:"path" default:"."`
 }
