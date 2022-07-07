@@ -1,5 +1,12 @@
 # Todo
 
+## documentation
+
+- Create the images
+- Make the title
+- Make the base documentation
+- Make the contribuition guidelines
+
 ## basic
 
 - (Done)walk over dirs
@@ -60,7 +67,7 @@
                                literal, locale, shell, shell-always,
                                shell-escape, shell-escape-always, c, escape
                                (overrides QUOTING_STYLE environment variable)
-- option -r, --reverse              reverse order while sorting
+- (Done) option -r, --reverse              reverse order while sorting
 - option -R, --recursive            list subdirectories recursively
 - option -s, --size                 print the allocated size of each file, in blocks
 - option -S                         sort by file size, largest first
