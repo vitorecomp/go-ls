@@ -5,24 +5,23 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	"github.com/vitorecomp/go-ls/pkg/cli"
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
 
-func Output(wg *sync.WaitGroup, outputChannel chan models.File, arguments cli.CLI) {
-	showColor := arguments.Color == "always" || arguments.Color == "auto"
+func Output(wg *sync.WaitGroup, outputChannel chan models.File, outputParameters models.OutputParameters) {
+
 	terminal := color.New()
 	for file := range outputChannel {
-		if showColor {
+		if outputParameters.Color {
 			terminal.DisableColor()
 		}
-		if arguments.List {
-			List(file, arguments.ShowHidden, showColor, arguments.Hash)
+		if outputParameters.List {
+			List(file, outputParameters.ShowHidden, outputParameters.Color, outputParameters.Hash)
 		} else {
-			Default(file, arguments.ShowHidden, showColor)
+			Default(file, outputParameters.ShowHidden, outputParameters.Color)
 		}
 	}
-	if !arguments.List {
+	if !outputParameters.List {
 		fmt.Println()
 	}
 	defer wg.Done()

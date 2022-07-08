@@ -19,10 +19,8 @@ func Main() {
 
 	//generate lookers modifiers
 	// that will define all the data that will be colocted by the looker
-	lookParamters := models.LookParameters{
-		Recursive: cli.Arguments.Recursive,
-		Hash:      cli.Arguments.Hash,
-	}
+	lookParameters := models.BuildLookParameters(cli.Arguments)
+	outputParameters := models.BuildOutputParameters(cli.Arguments)
 
 	//generate output modifiers
 	// that will define the way that the data will be showed
@@ -32,13 +30,13 @@ func Main() {
 	defer close(outputChannel)
 
 	wg.Add(1)
-	go output.Output(&wg, outputChannel, cli.Arguments)
+	go output.Output(&wg, outputChannel, outputParameters)
 
 	//create the routine pool
 
 	//look if has a path argument, if not
 	for _, path := range cli.Arguments.Paths {
-		looker.Look(path, lookParamters, outputChannel)
+		looker.Look(path, lookParameters, outputChannel)
 	}
 
 }
