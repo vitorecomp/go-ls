@@ -17,7 +17,7 @@ func Output(wg *sync.WaitGroup, outputChannel chan models.File, arguments cli.CL
 			terminal.DisableColor()
 		}
 		if arguments.List {
-			List(file, arguments.ShowHidden, showColor)
+			List(file, arguments.ShowHidden, showColor, arguments.Hash)
 		} else {
 			Default(file, arguments.ShowHidden, showColor)
 		}
