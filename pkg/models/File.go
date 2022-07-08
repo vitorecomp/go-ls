@@ -2,8 +2,10 @@ package models
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/user"
+	"path/filepath"
 	"syscall"
 )
 
@@ -11,6 +13,8 @@ type File struct {
 	FileInfo os.FileInfo
 	Owner    user.User
 	Group    user.Group
+	Hash     string
+	BasePath string
 }
 
 func (f *File) FillOwnerAndGroup() {
@@ -37,4 +41,16 @@ func (f *File) FillOwnerAndGroup() {
 	} else {
 		f.Group = *group
 	}
+}
+
+func (f *File) GetAbsolutePath() string {
+	slash := ""
+	if f.BasePath[len(f.BasePath)-1] != '/' {
+		slash += "/"
+	}
+	path, err := filepath.Abs(f.BasePath + slash + f.FileInfo.Name())
+	if err != nil {
+		log.Fatal(err)
+	}
+	return path
 }

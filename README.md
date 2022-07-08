@@ -97,7 +97,7 @@ Args:
 With `go get`:
 
 ```sh
-$ go get -u github.com/vitorecomp/go-ls
+    go get -u github.com/vitorecomp/go-ls
 ```
 
 ## Contributing
@@ -108,7 +108,4 @@ Submit a PR!
 
 This repo still a work in progress, so if you want to help let me know.
 
-
 ## Thanks to
-
-

@@ -72,6 +72,8 @@ type CLI struct {
 	DBConn string `help:"Db connection string." name:"db-connection"`
 	DBType string `help:"Db type." name:"db-type"`
 
+	Hash bool `help:"Get the files and dir hashs to compare" name:"hash" `
+
 	Paths []string `arg:"" optional:"" name:"path" help:"Paths to list." type:"path" default:"."`
 }
 
