@@ -16,6 +16,7 @@ func Main() {
 	defer wg.Wait()
 
 	kong.Parse(&cli.Arguments)
+	//teste de commit
 
 	//generate lookers modifiers
 	// that will define all the data that will be colocted by the looker
