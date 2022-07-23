@@ -59,7 +59,10 @@ func hashDir(name string, internalHashs []string) string {
 func hashFile(fileAbsoluteName string) string {
 	file, err := os.Open(fileAbsoluteName)
 	if err != nil {
-		log.Fatal(err)
+		errl := log.New(os.Stderr, "", 0)
+		errl.Println("Error reading file " + fileAbsoluteName)
+		errl.Println(err)
+		return ""
 	}
 	defer file.Close()
 

@@ -47,11 +47,16 @@ func List(file models.File, showHidden bool, noColor bool, hash bool) {
 }
 
 func Comparable(file models.File) {
+	isDir := "directory"
+	if !file.FileInfo.IsDir() {
+		isDir = "file"
+	}
 	terminal := color.New()
-	terminal.Printf("%s,%s/%s,%d\n",
+	terminal.Printf("%s , %d, %s , %s/%s\n",
 		file.Hash,
+		file.FileInfo.Size(),
+		isDir,
 		file.BasePath,
 		file.FileInfo.Name(),
-		file.FileInfo.Size(),
 	)
 }
