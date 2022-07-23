@@ -109,3 +109,127 @@ Submit a PR!
 This repo still a work in progress, so if you want to help let me know.
 
 ## Thanks to
+
+# Todo
+
+## documentation
+
+- Create the images
+- Make the title
+- Make the base documentation
+- Make the contribuition guidelines
+
+## basic
+
+- (Done)walk over dirs
+- (Done)list files
+- (Done)symbolic links
+- (Done)use channels
+- implement sorted output
+- implement file output
+- implement database output
+
+## main add funtions
+
+- implement the golang output formater
+- implement the hash of files
+- implement the comparable sort
+- implement the fast mode (incremental)
+
+## Database
+
+- implement the realtional database connection
+- add the paramenters
+- create table of dirs
+- save the registries
+
+## File
+
+- on file mode show statitics
+- implement the plain text save
+- implement the json format
+
+## fix
+
+- scape on the compare full path
+
+## Advanced
+
+- use golang routines
+- separete the hash in the process
+- use the following strucure
+- -> Walk over folders
+- -> Return the list and metadata
+- --> list (all files and folders without hash)
+- --> metadata (folder tree, pointer to files)
+- -> interate over files
+- -> add channel on the start to hashing of files
+- -> hash the tree when the files are done
+- tranform it on a lib
+
+- change the output process to gotemplate
+
+## Benchmark
+
+- make the benchmark builder
+- make the node_modules brenchmark
+
+## missing flags
+
+- option -a, --all
+- option -A, --almost-all
+- option --author
+- option -b, --escape
+- option --block-size=SIZE
+- option -B, --ignore-backups
+- option -c
+- option -C
+- option --color[=WHEN]
+- option -d, --directory
+- option -D, --dired
+- option-f
+- option-F, --classify
+- option --file-type
+- option --format=WORD
+- option --full-time
+- option -g
+- option --group-directories-first
+- option -G, --no-group
+- option -h, --human-readable
+- option --si
+- option -H, --dereference-command-lin
+- option --dereference-command-line-syrectory
+- option --hide=PATTERN
+- option --hyperlink[=WHEN]
+- option --indicator-style=WORD
+- option -i, --inode
+- option -I, --ignore=PATTERN 
+- option -k, --kibibytes
+- option -L, --dereference
+- option -m
+- option -n, --numeric-uid-gid
+- option -N, --literal
+- option -o
+- option -p, --indicator-style=slash
+- option -q, --hide-control-chars
+- option --show-control-chars
+- option -Q, --quote-name
+- option --quoting-style=WORD
+- option -r, --reverse
+- option -s, --size
+- option -S
+- option --sort=WORD
+- option --time=WORD
+- option --time-style=TIME_STYLE  time
+- option -t
+- option -T, --tabsize=COLS
+- option -u
+- option -U
+- option -v
+- option -w, --width=COLS
+- option -x
+- option -X
+- option -Z, --context
+- option -1
+
+
