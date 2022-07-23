@@ -72,7 +72,8 @@ type CLI struct {
 	DBConn string `help:"Db connection string." name:"db-connection"`
 	DBType string `help:"Db type." name:"db-type"`
 
-	Hash bool `help:"Get the files and dir hashs to compare" name:"hash" `
+	Hash       bool `help:"Get the files and dir hashs to compare" name:"hash" `
+	Comparable bool `help:"output a list of hash,fullpath, size in a csv format that can be used to compare dirs" name:"compare" `
 
 	Paths []string `arg:"" optional:"" name:"path" help:"Paths to list." type:"path" default:"."`
 }

@@ -10,6 +10,6 @@ type LookParameters struct {
 func BuildLookParameters(arguments cli.CLI) LookParameters {
 	return LookParameters{
 		Recursive: arguments.Recursive,
-		Hash:      arguments.Hash,
+		Hash:      arguments.Hash || arguments.Comparable,
 	}
 }

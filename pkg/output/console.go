@@ -45,3 +45,13 @@ func List(file models.File, showHidden bool, noColor bool, hash bool) {
 		terminal.Println()
 	}
 }
+
+func Comparable(file models.File) {
+	terminal := color.New()
+	terminal.Printf("%s,%s/%s,%d\n",
+		file.Hash,
+		file.BasePath,
+		file.FileInfo.Name(),
+		file.FileInfo.Size(),
+	)
+}

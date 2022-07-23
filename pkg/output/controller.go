@@ -9,7 +9,6 @@ import (
 )
 
 func Output(wg *sync.WaitGroup, outputChannel chan models.File, outputParameters models.OutputParameters) {
-
 	terminal := color.New()
 	for file := range outputChannel {
 		if outputParameters.Color {
@@ -17,11 +16,13 @@ func Output(wg *sync.WaitGroup, outputChannel chan models.File, outputParameters
 		}
 		if outputParameters.List {
 			List(file, outputParameters.ShowHidden, outputParameters.Color, outputParameters.Hash)
+		} else if outputParameters.Comparable {
+			Comparable(file)
 		} else {
 			Default(file, outputParameters.ShowHidden, outputParameters.Color)
 		}
 	}
-	if !outputParameters.List {
+	if !outputParameters.List && !outputParameters.Comparable {
 		fmt.Println()
 	}
 	defer wg.Done()
