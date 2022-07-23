@@ -110,7 +110,9 @@ This repo still a work in progress, so if you want to help let me know.
 
 ## Thanks to
 
-# Todo
+## Todo
+
+Below is a list of todo tasks for the project
 
 ## documentation
 
@@ -203,7 +205,7 @@ This repo still a work in progress, so if you want to help let me know.
 - option --hyperlink[=WHEN]
 - option --indicator-style=WORD
 - option -i, --inode
-- option -I, --ignore=PATTERN 
+- option -I, --ignore=PATTERN
 - option -k, --kibibytes
 - option -L, --dereference
 - option -m
@@ -231,5 +233,3 @@ This repo still a work in progress, so if you want to help let me know.
 - option -X
 - option -Z, --context
 - option -1
-
-
