@@ -1,7 +1,10 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -53,4 +56,38 @@ func (f *File) GetAbsolutePath() string {
 		log.Fatal(err)
 	}
 	return path
+}
+
+func (f *File) GetHash() string {
+	fileAbsoluteName := f.GetAbsolutePath()
+	file, err := os.Open(fileAbsoluteName)
+	if err != nil {
+		errl := log.New(os.Stderr, "", 0)
+		errl.Println("Error reading file " + fileAbsoluteName)
+		errl.Println(err)
+		return ""
+	}
+	defer file.Close()
+
+	buf := make([]byte, 30*1024)
+	sha256 := sha256.New()
+	for {
+		n, err := file.Read(buf)
+		if n > 0 {
+			_, err := sha256.Write(buf[:n])
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	return base64.URLEncoding.EncodeToString(sha256.Sum(nil))
 }

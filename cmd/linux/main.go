@@ -27,17 +27,22 @@ func Main() {
 	// that will define the way that the data will be showed
 
 	//create output channel
-	outputChannel := make(chan models.File, 100)
+	hashChannel := make(chan models.File, 1000000)
+	outputChannel := make(chan models.File, 1000)
 	defer close(outputChannel)
+	defer close(hashChannel)
 
 	wg.Add(1)
 	go output.Output(&wg, outputChannel, outputParameters)
+
+	wg.Add(1)
+	go looker.Hash(&wg, hashChannel, outputChannel, lookParameters)
 
 	//create the routine pool
 
 	//look if has a path argument, if not
 	for _, path := range cli.Arguments.Paths {
-		looker.Look(path, lookParameters, outputChannel)
+		looker.Look(path, lookParameters, hashChannel)
 	}
 
 }
