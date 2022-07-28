@@ -12,6 +12,7 @@ import (
 
 func Main() {
 	var wg sync.WaitGroup
+	var chanStack models.Stack
 	//closing the
 	defer wg.Wait()
 
@@ -23,26 +24,39 @@ func Main() {
 	lookParameters := models.BuildLookParameters(cli.Arguments)
 	outputParameters := models.BuildOutputParameters(cli.Arguments)
 
-	//generate output modifiers
-	// that will define the way that the data will be showed
+	//creating the channels (hash, sort, output)
 
 	//create output channel
-	hashChannel := make(chan models.File, 1000000)
-	outputChannel := make(chan models.File, 1000)
+	outputChannel := make(models.OutputChan, 1000)
+	chanStack = chanStack.Push(outputChannel)
 	defer close(outputChannel)
-	defer close(hashChannel)
 
-	wg.Add(1)
-	go output.Output(&wg, outputChannel, outputParameters)
+	//TODO add here the sort channel if setted
 
-	wg.Add(1)
-	go looker.Hash(&wg, hashChannel, outputChannel, lookParameters)
-
-	//create the routine pool
-
-	//look if has a path argument, if not
-	for _, path := range cli.Arguments.Paths {
-		looker.Look(path, lookParameters, hashChannel)
+	//create output hash channel
+	if lookParameters.Hash {
+		hashChannel := make(models.OutputChan, 1000000)
+		defer close(hashChannel)
+		chanStack = chanStack.Push(hashChannel)
 	}
 
+	//run the paths
+	for _, path := range cli.Arguments.Paths {
+		wg.Add(1)
+		go looker.Look(&wg, path, lookParameters, chanStack.Head())
+	}
+
+	//add the channels consumers
+	if lookParameters.Hash {
+		var inputChannel models.OutputChan
+		chanStack, inputChannel = chanStack.Pop()
+		wg.Add(1)
+		go looker.Hash(&wg, inputChannel, chanStack.Head(), lookParameters)
+	}
+
+	//TODO add here the sort consumer if setted
+
+	wg.Add(1)
+	go output.Output(&wg, chanStack.Head(), outputParameters)
+	//create the routine pool
 }

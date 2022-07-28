@@ -3,11 +3,17 @@ package looker
 import (
 	"io/ioutil"
 	"log"
+	"sync"
 
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
 
-func Look(path string, parameters models.LookParameters, hashChannel chan models.File) {
+func Look(wg *sync.WaitGroup, path string, parameters models.LookParameters, channel chan models.File) {
+	defer wg.Done()
+	look(path, parameters, channel)
+}
+
+func look(path string, parameters models.LookParameters, channel chan models.File) {
 	filesSo, err := ioutil.ReadDir(path)
 
 	if err != nil {
@@ -20,9 +26,9 @@ func Look(path string, parameters models.LookParameters, hashChannel chan models
 			BasePath: path,
 		}
 		if file.IsDir() {
-			Look(fileModel.GetAbsolutePath(), parameters, hashChannel)
+			look(fileModel.GetAbsolutePath(), parameters, channel)
 		}
-		hashChannel <- fileModel
+		channel <- fileModel
 	}
 
 }
