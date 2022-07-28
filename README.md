@@ -134,9 +134,9 @@ Below is a list of todo tasks for the project
 ## main add funtions
 
 - implement the golang output formater
-- implement the hash of files
+- (DONE)implement the hash of files
 - implement the comparable sort
-- implement the fast mode (incremental)
+- (DONE)implement the fast mode (incremental)
 
 ## Database
 
@@ -158,14 +158,14 @@ Below is a list of todo tasks for the project
 ## Advanced
 
 - use golang routines
-- separete the hash in the process
+- (DONE)separete the hash in the process
 - use the following strucure
 - -> Walk over folders
 - -> Return the list and metadata
 - --> list (all files and folders without hash)
 - --> metadata (folder tree, pointer to files)
 - -> interate over files
-- -> add channel on the start to hashing of files
+- -> (DONE)add channel on the start to hashing of files
 - -> hash the tree when the files are done
 - tranform it on a lib
 
