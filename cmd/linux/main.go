@@ -20,7 +20,7 @@ func Main() {
 	//teste de commit
 
 	//generate lookers modifiers
-	// that will define all the data that will be colocted by the looker
+	// that will define all the data that will be collected by the looker
 	lookParameters := models.BuildLookParameters(cli.Arguments)
 	outputParameters := models.BuildOutputParameters(cli.Arguments)
 

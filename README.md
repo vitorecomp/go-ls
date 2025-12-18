@@ -1,15 +1,15 @@
-# go-ls A expasion on the ls and ls-go imlementation
+# go-ls A expansion on the ls and ls-go implementation
 
 ![ls-go](./img/ls-go.png)
 
 A high performance version of `ls` written in [Go](https://golang.org/).
 
-Build to work with big dictories, mainly to help compare entire file systems,
+Build to work with big directories, mainly to help compare entire file systems,
 helping to validate backups or deep copies.
 
 Add some functions over the original ls
 
-- Save to dababase function
+- Save to database function
 - Go template
 - Hash files and dirs
 - Async Print
@@ -119,7 +119,7 @@ Below is a list of todo tasks for the project
 - Create the images
 - Make the title
 - Make the base documentation
-- Make the contribuition guidelines
+- Make the contribution guidelines
 
 ## basic
 
@@ -133,21 +133,21 @@ Below is a list of todo tasks for the project
 
 ## main add funtions
 
-- implement the golang output formater
+- implement the golang output formatter
 - (DONE)implement the hash of files
 - implement the comparable sort
 - (DONE)implement the fast mode (incremental)
 
 ## Database
 
-- implement the realtional database connection
-- add the paramenters
+- implement the relational database connection
+- add the parameters
 - create table of dirs
 - save the registries
 
 ## File
 
-- on file mode show statitics
+- on file mode show statistics
 - implement the plain text save
 - implement the json format
 
@@ -158,23 +158,23 @@ Below is a list of todo tasks for the project
 ## Advanced
 
 - use golang routines
-- (DONE)separete the hash in the process
-- use the following strucure
+- (DONE)separate the hash in the process
+- use the following structure
 - -> Walk over folders
 - -> Return the list and metadata
 - --> list (all files and folders without hash)
 - --> metadata (folder tree, pointer to files)
-- -> interate over files
+- -> iterate over files
 - -> (DONE)add channel on the start to hashing of files
 - -> hash the tree when the files are done
-- tranform it on a lib
+- transform it on a lib
 
-- change the output process to gotemplate
+- change the output process to go template
 
 ## Benchmark
 
 - make the benchmark builder
-- make the node_modules brenchmark
+- make the node_modules benchmark
 
 ## missing flags
 
