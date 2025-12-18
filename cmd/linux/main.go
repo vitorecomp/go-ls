@@ -1,6 +1,9 @@
 package linux
 
 import (
+	"log"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/alecthomas/kong"
@@ -10,53 +13,46 @@ import (
 	"github.com/vitorecomp/go-ls/pkg/output"
 )
 
-func Main() {
-	var wg sync.WaitGroup
-	var chanStack models.Stack
-	//closing the
-	defer wg.Wait()
-
-	kong.Parse(&cli.Arguments)
-	//teste de commit
-
-	//generate lookers modifiers
-	// that will define all the data that will be collected by the looker
-	lookParameters := models.BuildLookParameters(cli.Arguments)
-	outputParameters := models.BuildOutputParameters(cli.Arguments)
-
-	//creating the channels (hash, sort, output)
-
-	//create output channel
-	outputChannel := make(models.OutputChan, 1000)
-	chanStack = chanStack.Push(outputChannel)
-	defer close(outputChannel)
-
-	//TODO add here the sort channel if setted
-
-	//create output hash channel
-	if lookParameters.Hash {
-		hashChannel := make(models.OutputChan, 1000000)
-		defer close(hashChannel)
-		chanStack = chanStack.Push(hashChannel)
-	}
+func run(wg *sync.WaitGroup, lookParameters models.LookParameters, outputChannel chan models.File) {
 
 	//run the paths
 	for _, path := range cli.Arguments.Paths {
-		wg.Add(1)
-		go looker.Look(&wg, path, lookParameters, chanStack.Head())
+		fileInfo, err := os.Stat(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if fileInfo.IsDir() {
+			basePath := filepath.Dir(path)
+			workingFile := models.File{
+				FileInfo: fileInfo,
+				BasePath: basePath,
+			}
+			wg.Add(1)
+			go looker.Look(wg, path, lookParameters, outputChannel)
+			outputChannel <- workingFile
+
+		} else {
+			log.Fatal("Path params is not a dir:" + path)
+		}
 	}
+	wg.Wait()
+	close(outputChannel)
+}
+func Main() {
+	var wg sync.WaitGroup
+	//closing the wait group
 
-	//add the channels consumers
-	if lookParameters.Hash {
-		var inputChannel models.OutputChan
-		chanStack, inputChannel = chanStack.Pop()
-		wg.Add(1)
-		go looker.Hash(&wg, inputChannel, chanStack.Head(), lookParameters)
-	}
+	kong.Parse(&cli.Arguments)
 
-	//TODO add here the sort consumer if setted
+	//generate lookers modifiers
+	// that will define if data that will be collected by the looker
+	lookParameters := models.BuildLookParameters(cli.Arguments)
 
-	wg.Add(1)
-	go output.Output(&wg, chanStack.Head(), outputParameters)
-	//create the routine pool
+	//create output channel
+	outputChannel := make(models.OutputChan, 1000)
+	go run(&wg, lookParameters, outputChannel)
+	outputParameters := models.BuildOutputParameters(cli.Arguments)
+	output.Output(outputChannel, outputParameters)
+
 }
