@@ -1,5 +1,7 @@
 # `go-ls` Project Documentation
 
+![go-ls Operations Overview Dashboard](./references/dashboard.png)
+
 Welcome to the official documentation for **`go-ls`** (`github.com/vitorecomp/go-ls`), a concurrent directory scanning, Merkle-tree hashing, live filesystem monitoring, backup comparison, and duplicate detection platform written in Go with an integrated Next.js web console.
 
 ---

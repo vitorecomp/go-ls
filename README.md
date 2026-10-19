@@ -1,5 +1,7 @@
 # go-ls
 
+![go-ls Operations Overview Dashboard](./documents/references/dashboard.png)
+
 A high-performance **client-server** directory scanning, Merkle-hashing, backup comparison, and duplicate detection platform written in [Go](https://go.dev/) with an integrated [Next.js](https://nextjs.org/) web console served directly by the Go server.
 
 `go-ls` combines a fast concurrent filesystem scanner (`go-ls` / `go-ls-client`) with a centralized HTTP, Next.js Web UI, and PostgreSQL backend (`go-ls-server`, deployable via **Podman Compose** or **Docker Compose**). Clients can scan directories locally or push file and folder checksums to the server to browse snapshots in the web UI, compare directories across machines, validate backups, and detect duplicate files.
