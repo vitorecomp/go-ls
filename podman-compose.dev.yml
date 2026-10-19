@@ -1,0 +1,71 @@
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    container_name: go-ls-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gols}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gols}
+      POSTGRES_DB: ${POSTGRES_DB:-gols}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data:Z
+    networks:
+      - gols-dev-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-gols} -d $${POSTGRES_DB:-gols}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: docker.io/library/node:22-alpine
+    container_name: go-ls-web-dev
+    restart: unless-stopped
+    working_dir: /workspace/web
+    command: sh -c "if [ ! -x node_modules/.bin/next ]; then npm install --no-audit --no-fund; fi && exec ./node_modules/.bin/next dev --hostname 0.0.0.0 --port 3000"
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${GOLS_WEB_PORT:-3000}:3000"
+    volumes:
+      - ./web:/workspace/web:z
+      - web_next_cache:/workspace/web/.next
+    networks:
+      - gols-dev-net
+
+  server:
+    image: docker.io/library/golang:1.24-alpine
+    container_name: go-ls-server-dev
+    restart: unless-stopped
+    working_dir: /workspace
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started
+    command: go run ./cmd/server --dev --listen=:8080 --ui-proxy=http://web:3000
+    environment:
+      GOLS_LISTEN_ADDR: ":8080"
+      GOLS_UI_PROXY: "http://web:3000"
+      GOLS_DB_URL: "postgres://${POSTGRES_USER:-gols}:${POSTGRES_PASSWORD:-gols}@db:5432/${POSTGRES_DB:-gols}?sslmode=disable"
+    ports:
+      - "${GOLS_PORT:-8080}:8080"
+    volumes:
+      - ./:/workspace:z
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    networks:
+      - gols-dev-net
+
+networks:
+  gols-dev-net:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  web_next_cache:
+  go_mod_cache:
+  go_build_cache:

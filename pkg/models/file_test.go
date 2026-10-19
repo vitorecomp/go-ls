@@ -149,3 +149,16 @@ func TestFileMarshalJSON(t *testing.T) {
 		t.Errorf("expected non-empty hash in JSON output")
 	}
 }
+
+func TestDetectComputerAndDriveID(t *testing.T) {
+	tmpDir := t.TempDir()
+	compID := DetectComputerID("test-host")
+	if compID == "" {
+		t.Errorf("expected non-empty ComputerID")
+	}
+
+	driveID := DetectDriveID(tmpDir)
+	if driveID == "" || driveID == "unknown-drive" {
+		t.Errorf("expected valid DriveID for %s, got %q", tmpDir, driveID)
+	}
+}

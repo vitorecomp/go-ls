@@ -1,0 +1,51 @@
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    container_name: go-ls-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gols}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gols}
+      POSTGRES_DB: ${POSTGRES_DB:-gols}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:Z
+    networks:
+      - gols-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-gols} -d $${POSTGRES_DB:-gols}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/go-ls-server:latest
+    container_name: go-ls-server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOLS_LISTEN_ADDR: ":8080"
+      GOLS_UI_DIR: "/usr/local/share/go-ls/web"
+      GOLS_DB_URL: "postgres://${POSTGRES_USER:-gols}:${POSTGRES_PASSWORD:-gols}@db:5432/${POSTGRES_DB:-gols}?sslmode=disable"
+    ports:
+      - "${GOLS_PORT:-8080}:8080"
+    networks:
+      - gols-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  gols-net:
+    driver: bridge
+
+volumes:
+  postgres_data:

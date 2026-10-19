@@ -1,4 +1,5 @@
-// Command go-ls is a concurrent file listing and hashing CLI utility written in Go.
+// Command go-ls is a unified client-server CLI for concurrent directory scanning,
+// hashing, remote storage, diffing, and duplicate detection.
 package main
 
 import (
@@ -7,31 +8,31 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/vitorecomp/go-ls/pkg/cli"
-	"github.com/vitorecomp/go-ls/pkg/looker"
-	"github.com/vitorecomp/go-ls/pkg/models"
-	"github.com/vitorecomp/go-ls/pkg/output"
 )
 
-const defaultChannelBuffer = 1024
-
 func main() {
-	var args cli.CLI
-	kong.Parse(&args,
-		kong.Name("go-ls"),
-		kong.Description("High-performance concurrent directory listing, hashing, and comparison tool."),
-		kong.UsageOnError(),
-	)
-
-	if args.Version {
-		fmt.Printf("go-ls v%s\n", cli.Version)
-		return
+	rawArgs := os.Args[1:]
+	for _, a := range rawArgs {
+		if a == "--version" {
+			fmt.Printf("go-ls v%s\n", cli.Version)
+			return
+		}
 	}
 
-	lookOpts := args.ToLookOptions()
-	outputOpts := args.ToOutputOptions()
+	var app cli.CLI
+	parser, err := kong.New(&app,
+		kong.Name("go-ls"),
+		kong.Description("Client-server directory listing, hashing, comparison, and backup verification tool."),
+		kong.UsageOnError(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "go-ls: %v\n", err)
+		os.Exit(1)
+	}
 
-	outputChannel := make(models.OutputChan, defaultChannelBuffer)
-	go looker.Run(args.Paths, lookOpts, outputChannel, os.Stderr)
+	ctx, err := parser.Parse(cli.NormalizeArgs(rawArgs))
+	parser.FatalIfErrorf(err)
 
-	output.Output(outputChannel, outputOpts)
+	err = ctx.Run()
+	parser.FatalIfErrorf(err)
 }

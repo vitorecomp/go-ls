@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/vitorecomp/go-ls/pkg/cli"
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
 
@@ -46,7 +45,7 @@ func List(w io.Writer, file models.File, showHidden bool, noColor bool, showHash
 		file.Owner.Username,
 		file.Group.Name,
 		file.FileInfo.Size(),
-		file.FileInfo.ModTime().Format(cli.Constants.DateFormat),
+		file.FileInfo.ModTime().Format(models.DefaultDateFormat),
 	)
 
 	if showHash {

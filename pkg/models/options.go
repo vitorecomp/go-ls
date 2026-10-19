@@ -1,6 +1,9 @@
 // Package models defines the core domain types and configuration options for go-ls.
 package models
 
+// DefaultDateFormat is the timestamp layout used in long (-l) console output.
+const DefaultDateFormat = "Jan _2 15:04"
+
 // OutputChan is a channel that streams discovered File entries from the looker to the output stage.
 type OutputChan chan File
 
@@ -35,6 +38,7 @@ type LookOptions struct {
 	Hash       bool
 	HashAlgo   HashAlgorithm
 	Workers    int
+	Live       bool
 }
 
 // LookParameters is an alias for LookOptions kept for backwards compatibility.

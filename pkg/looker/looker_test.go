@@ -2,10 +2,12 @@ package looker
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
@@ -148,5 +150,87 @@ func TestRunNonExistentPathReportsErrorGracefully(t *testing.T) {
 	}
 	if !strings.Contains(errLog, "cannot access") {
 		t.Errorf("expected 'cannot access' error message, got %q", errLog)
+	}
+}
+
+func TestWatchDetectsAddedModifiedDeletedFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	initialFile := filepath.Join(tmpDir, "a.txt")
+	if err := os.WriteFile(initialFile, []byte("initial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := models.LookOptions{
+		Recursive:  true,
+		ShowHidden: false,
+		Hash:       true,
+		HashAlgo:   models.HashCRC32,
+		Live:       true,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	diffs := make(chan models.DiffReport, 8)
+	errCh := make(chan error, 1)
+
+	initialFiles := Collect([]string{tmpDir}, opts, nil)
+	go func() {
+		errCh <- Watch(
+			ctx,
+			[]string{tmpDir},
+			opts,
+			initialFiles,
+			25*time.Millisecond,
+			nil,
+			func(_ []models.File, _, _ models.ScanRecord, diff models.DiffReport) error {
+				diffs <- diff
+				return nil
+			},
+		)
+	}()
+
+	// Give fsnotify a brief moment to register initial directory watches.
+	time.Sleep(50 * time.Millisecond)
+
+	// 1. Write a hidden file (should be ignored because ShowHidden is false)
+	// and create a visible file b.txt.
+	if err := os.WriteFile(filepath.Join(tmpDir, ".ignored"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secondFile := filepath.Join(tmpDir, "b.txt")
+	if err := os.WriteFile(secondFile, []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case d := <-diffs:
+		if d.Added != 1 || len(d.Changes) != 1 || d.Changes[0].RelPath != "b.txt" || d.Changes[0].Change != models.DiffAdded {
+			t.Fatalf("unexpected diff after adding b.txt: %+v", d)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for added file event")
+	}
+
+	// 2. Modify a.txt and remove b.txt.
+	if err := os.WriteFile(initialFile, []byte("updated-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(secondFile); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case d := <-diffs:
+		if d.Modified != 1 || d.Deleted != 1 {
+			t.Fatalf("expected 1 modified and 1 deleted, got %+v", d)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for modified/deleted file event")
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
 }

@@ -13,12 +13,31 @@ import (
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
 
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func newSyncWriter(w io.Writer) io.Writer {
+	if w == nil || w == io.Discard {
+		return io.Discard
+	}
+	if _, ok := w.(*syncWriter); ok {
+		return w
+	}
+	return &syncWriter{w: w}
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
+}
+
 // Run traverses all provided paths (files or directories) concurrently according to opts,
 // streaming discovered models.File entries to out and closing out when traversal finishes.
 func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut io.Writer) {
-	if errOut == nil {
-		errOut = io.Discard
-	}
+	errOut = newSyncWriter(errOut)
 	sem := newSemaphore(opts.Workers)
 
 	var wg sync.WaitGroup
@@ -64,7 +83,7 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 func Look(wg *sync.WaitGroup, path string, parameters models.LookParameters, channel chan<- models.File) {
 	defer wg.Done()
 	sem := newSemaphore(parameters.Workers)
-	walkDir(sem, path, parameters, true, channel, os.Stderr)
+	walkDir(sem, path, parameters, true, channel, newSyncWriter(os.Stderr))
 }
 
 // walkDir scans dirPath, optionally emits discovered entries to out, and returns the

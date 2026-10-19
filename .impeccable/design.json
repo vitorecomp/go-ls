@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-18T21:02:00-03:00",
+  "title": "Design System: go-ls",
+  "extensions": {
+    "colorMeta": {
+      "telemetry-cobalt": {
+        "role": "primary",
+        "displayName": "Telemetry Cobalt",
+        "canonical": "hsl(208, 76%, 36%)",
+        "tonalRamp": ["#071f38", "#0b3158", "#0f4b82", "#1662a2", "#2b7ec2", "#5ca3de", "#9ec9ef", "#dcebfa"]
+      },
+      "selection-royal": {
+        "role": "primary",
+        "displayName": "Selection Royal",
+        "canonical": "#3b63eb",
+        "tonalRamp": ["#10205a", "#1b3488", "#2848b8", "#3b63eb", "#6082f2", "#8da6f7", "#bfd0fb", "#eef3ff"]
+      },
+      "signal-vermilion": {
+        "role": "secondary",
+        "displayName": "Signal Vermilion",
+        "canonical": "#d9532f",
+        "tonalRamp": ["#3d1409", "#682310", "#9e371c", "#d9532f", "#e57658", "#ef9d86", "#f7c5b7", "#fdece7"]
+      },
+      "signal-crimson": {
+        "role": "secondary",
+        "displayName": "Signal Crimson",
+        "canonical": "#e5484d",
+        "tonalRamp": ["#420e11", "#73181d", "#ad262c", "#e5484d", "#ec7175", "#f39da0", "#f9c8ca", "#fdedee"]
+      },
+      "led-emerald": {
+        "role": "tertiary",
+        "displayName": "LED Emerald",
+        "canonical": "#22c55e",
+        "tonalRamp": ["#083619", "#0f5c2b", "#178c42", "#22c55e", "#4fd680", "#82e3a5", "#b7f0cb", "#e6faed"]
+      },
+      "obsidian-chassis": {
+        "role": "neutral",
+        "displayName": "Obsidian Chassis",
+        "canonical": "#08090b",
+        "tonalRamp": ["#08090b", "#14171d", "#222730", "#353c4a", "#525c6e", "#7a8599", "#b0b8c7", "#e4e8ef"]
+      },
+      "shopfloor-porcelain": {
+        "role": "neutral",
+        "displayName": "Shopfloor Porcelain",
+        "canonical": "hsl(205, 18%, 95%)",
+        "tonalRamp": ["#18202a", "#2c3847", "#4d5a6b", "#6f7d8f", "#9aa6b5", "#cfd6de", "#e6ecf0", "#eff3f6"]
+      },
+      "anodized-aluminum": {
+        "role": "neutral",
+        "displayName": "Anodized Aluminum",
+        "canonical": "#e3e6e5",
+        "tonalRamp": ["#1e2226", "#3a3f44", "#5c646d", "#7a8086", "#aeb4b2", "#cfd3d1", "#e3e6e5", "#f8f9f8"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display Metric",
+        "purpose": "Dashboard KPI values (Tracked Computers, Indexed Volume)."
+      },
+      "headline": {
+        "displayName": "Viewport Headline",
+        "purpose": "Sticky top bar active view title."
+      },
+      "title": {
+        "displayName": "Drawer & Panel Title",
+        "purpose": "Left operations drawer header and table section headers."
+      },
+      "body": {
+        "displayName": "UI Body",
+        "purpose": "Buttons, segmented tabs, search inputs, and descriptive text."
+      },
+      "label": {
+        "displayName": "Monospace Telemetry Label",
+        "purpose": "Filesystem paths, Merkle hashes, drive UUIDs, byte capacities, and 3D module labels."
+      }
+    },
+    "shadows": [
+      {
+        "name": "surface-rest",
+        "value": "0 1px 3px rgba(15, 23, 42, 0.06)",
+        "purpose": "Default resting elevation for dashboard cards and panels."
+      },
+      {
+        "name": "op-card-selected",
+        "value": "0 6px 16px rgba(79, 125, 243, 0.14)",
+        "purpose": "Highlighted elevation for the selected operation card in the left drawer."
+      },
+      {
+        "name": "floating-hud",
+        "value": "0 8px 24px rgba(15, 23, 42, 0.12)",
+        "purpose": "Floating frosted-glass stage overlays (host floor bar, breadcrumb HUD, zoom dock, legend card)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "sidebar-expand",
+        "value": "0.24s cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Smooth width expansion and collapse of the fixed left navigation rail."
+      },
+      {
+        "name": "control-hover",
+        "value": "0.15s ease",
+        "purpose": "Crisp background, border, and color transitions on buttons, tabs, and operation cards."
+      }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "900px" },
+      { "name": "workspace-split", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary action trigger used for drill-down and snapshot comparison.",
+      "html": "<button class=\"ds-btn-primary\">Drill into Folder →</button>",
+      "css": ".ds-btn-primary { font-family: var(--font-sans, 'Inter', sans-serif); font-size: 0.82rem; font-weight: 500; padding: 0.38rem 0.8rem; border-radius: 6px; border: 1px solid #1662a2; background: #1662a2; color: #ffffff; cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease; } .ds-btn-primary:hover { background: #0f4b82; border-color: #0f4b82; } .ds-btn-primary:focus-visible { outline: 2px solid #3b63eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Top & Bottom Segmented Option Bar",
+      "kind": "nav",
+      "refersTo": "floor-tab",
+      "description": "Segmented pill bar with crimson active indicator dot used in the top header and bottom host selector.",
+      "html": "<div class=\"ds-option-bar\"><button class=\"ds-floor-tab active\"><span class=\"ds-floor-dot\"></span><span>3D Subtree Modules</span></button><button class=\"ds-floor-tab\"><span>3D Leaf Files</span></button><button class=\"ds-floor-tab\"><span>Legend (12)</span></button></div>",
+      "css": ".ds-option-bar { background: #ffffff; border: 1px solid #cfd6de; border-radius: 9px; padding: 3px; display: inline-flex; align-items: center; gap: 2px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05); } .ds-floor-tab { border: none; background: transparent; padding: 0.38rem 0.85rem; border-radius: 7px; font-family: var(--font-sans, 'Inter', sans-serif); font-size: 0.78rem; font-weight: 600; color: #4d5a6b; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease; } .ds-floor-tab:hover { background: #f3f5f8; color: #18202a; } .ds-floor-tab.active { background: #f1f4f9; color: #18202a; font-weight: 700; } .ds-floor-dot { width: 6px; height: 6px; border-radius: 50%; background: #e5484d; display: inline-block; }"
+    },
+    {
+      "name": "Reported Operation Card",
+      "kind": "card",
+      "refersTo": "operation-card",
+      "description": "Telemetry route card in the left drawer showing telemetry icon badge (.op-card-icon-badge with ⚡ / ▣ glyphs), circular volume ring, host-to-drive route connector, and metadata pills.",
+      "html": "<div class=\"ds-op-card selected\"><div class=\"ds-op-top\"><div class=\"ds-op-title-group\"><span class=\"ds-op-badge\">⚡</span><span class=\"ds-op-title\">/srv/backups/prod</span><span class=\"ds-op-ver\">v3</span></div></div><div class=\"ds-op-route\"><div><div class=\"ds-op-code\">workstation-alpha</div><div class=\"ds-op-status\">Subtree Ready</div></div><div class=\"ds-op-line\"><span class=\"ds-op-node\"></span></div><div style=\"text-align:right\"><div class=\"ds-op-code\">uuid:9f82-4a1c</div><div class=\"ds-op-delta\">+412.5 MB</div></div></div><div class=\"ds-op-footer\"><span class=\"ds-op-pill\">◫ 24 files</span><span class=\"ds-op-share\">48%</span></div></div>",
+      "css": ".ds-op-card { background: #ffffff; border: 1.5px solid #e5e8ef; border-radius: 12px; padding: 0.78rem 0.85rem; display: flex; flex-direction: column; gap: 0.65rem; width: 310px; font-family: var(--font-sans, 'Inter', sans-serif); transition: border-color 0.16s ease, box-shadow 0.16s ease; } .ds-op-card.selected { background: #f3f6ff; border: 2px solid #4f7df3; box-shadow: 0 6px 16px rgba(79, 125, 243, 0.14); } .ds-op-top, .ds-op-route, .ds-op-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; } .ds-op-title-group { display: flex; align-items: center; gap: 0.45rem; } .ds-op-badge { width: 21px; height: 21px; border-radius: 5px; background: #e5484d; color: #fff; font-size: 0.68rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; } .ds-op-title { font-family: var(--font-mono, monospace); font-size: 0.82rem; font-weight: 700; color: #18202a; } .ds-op-ver { font-family: var(--font-mono, monospace); font-size: 0.66rem; font-weight: 700; color: #d9532f; background: rgba(217, 83, 47, 0.1); padding: 2px 6px; border-radius: 4px; } .ds-op-code { font-family: var(--font-mono, monospace); font-size: 0.74rem; font-weight: 700; color: #18202a; } .ds-op-status { font-size: 0.68rem; color: #16a34a; font-weight: 500; } .ds-op-delta { font-family: var(--font-mono, monospace); font-size: 0.69rem; font-weight: 600; color: #e5484d; } .ds-op-line { flex: 1; height: 1.5px; background: #334155; position: relative; margin: 0 8px; } .ds-op-node { position: absolute; left: 50%; top: -3.5px; width: 8px; height: 8px; border-radius: 50%; background: #fff; border: 1.8px solid #1e293b; } .ds-op-footer { padding-top: 0.45rem; border-top: 1px solid rgba(226, 232, 240, 0.85); } .ds-op-pill { font-family: var(--font-mono, monospace); font-size: 0.67rem; font-weight: 600; color: #4d5a6b; background: #f1f3f7; padding: 2px 7px; border-radius: 5px; } .ds-op-share { font-family: var(--font-mono, monospace); font-size: 0.68rem; font-weight: 700; color: #1e293b; background: #e9eef5; padding: 2px 8px; border-radius: 5px; }"
+    },
+    {
+      "name": "Global Viewport Search Pill",
+      "kind": "input",
+      "refersTo": "search-pill",
+      "description": "Centered search input in the sticky top header bar for filtering hosts, paths, and Merkle hashes.",
+      "html": "<div class=\"ds-search-pill\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"11\" cy=\"11\" r=\"7.5\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/></svg><input class=\"ds-search-input\" placeholder=\"Search computers, directories, file paths, or Merkle hashes...\" /></div>",
+      "css": ".ds-search-pill { display: flex; align-items: center; gap: 0.55rem; background: #f3f5f8; border: 1px solid transparent; border-radius: 8px; padding: 0.38rem 0.8rem; color: #6f7d8f; width: 360px; transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease; } .ds-search-pill:focus-within { background: #ffffff; border-color: #1662a2; box-shadow: 0 0 0 3px rgba(24, 104, 183, 0.12); } .ds-search-input { border: none; background: transparent; outline: none; width: 100%; font-family: var(--font-sans, 'Inter', sans-serif); font-size: 0.84rem; color: #18202a; }"
+    },
+    {
+      "name": "Merkle Hash & Drive Identity Chips",
+      "kind": "chip",
+      "refersTo": "hash-chip",
+      "description": "Monospace telemetry chips for directory/file Merkle digests and hardware volume UUIDs.",
+      "html": "<div style=\"display:inline-flex;gap:8px;align-items:center;\"><span class=\"ds-drive-chip\">uuid:f49b-91a0</span><span class=\"ds-hash-chip\">8f91c2b4e01a</span></div>",
+      "css": ".ds-drive-chip { font-family: var(--font-mono, monospace); font-size: 0.72rem; font-weight: 500; padding: 0.14rem 0.55rem; border-radius: 999px; background: #dcebfa; color: #1662a2; border: 1px solid rgba(22, 98, 162, 0.25); } .ds-hash-chip { font-family: var(--font-mono, monospace); font-size: 0.76rem; padding: 0.12rem 0.48rem; border-radius: 5px; background: #e6ecf0; border: 1px solid #cfd6de; color: #18202a; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Isometric Hardware Telemetry Deck",
+    "overview": "go-ls is an industrial-technical storage telemetry and Merkle verification console that bridges low-level filesystem inspection with tactile spatial visualization. The interface frames a crisp, high-density light porcelain workspace inside an obsidian-dark instrument chassis (#08090b), pairing scannable operational route cards on the left with full-bleed 3D isometric hardware modules and hierarchical WinDirStat trees on the right. Every visual element is grounded in hardware and cryptographic reality: directories appear as extruded anodized-aluminum modules on an isometric shopfloor grid with corner rivets, cooling vents (//////), 5-dot capacity LEDs, and radar target rings, while operational cards summarize host-to-drive storage routes, revision deltas (v1, v2), and circular volume share rings.\n\nThe aesthetic philosophy is crisp, industrial-technical, and high-density. It explicitly rejects decorative marketing gradients, neon cyberpunk dark-mode glow, and ungrounded floating cards in favor of physical hardware metaphors, flush structural split panes, and monospace precision.",
+    "keyCharacteristics": [
+      "Obsidian Instrument Framing: Fixed left navigation rail (64px collapsed, 248px expanded) with Sync Server, Collapse Sidebar, Indexed Volume, and API Online/Offline orb in .sidebar-bottom, plus 8px top/bottom dark frame borders that enclose a rounded light viewport (22px left corners, flush right edge).",
+      "Card-Style Top Header & Operational Split Workspace: A rounded top header card in normal document flow (.viewport-header, margin: 1rem 1.4rem 0 1.4rem) with a global search pill and contextual segmented options sitting above the left card drawer (Reported Modules / Tracked Subtrees with .op-card-icon-badge ⚡ / ▣ glyphs) and right stage.",
+      "3D Isometric Shopfloor Telemetry: Extruded 3D cushion modules rendered in painter's order inside #treemap-workspace (fitting 100% of the remaining vertical screen height) over a 30° isometric coordinate grid with hatched floor shadow pads, floating HUD controls, and interactive zoom.",
+      "Cryptographic Monospace Readouts: All file paths, CRC-32/SHA-256 digests, drive UUIDs, byte capacities, and revision tags are set in JetBrains Mono for immediate scannability."
+    ],
+    "rules": [
+      {
+        "name": "The Hardware-Grounded Color Rule",
+        "body": "High-chroma colors are reserved strictly for telemetry signals: active tab dots (#e5484d), 3D module LEDs (#d9532f, #7ac143), API health orbs (#22c55e), and file-extension category swatches. Structural chrome remains neutral porcelain, ash, and obsidian.",
+        "section": "colors"
+      },
+      {
+        "name": "The White-Ringed Status Orb Rule",
+        "body": "The API health indicator in the bottom sidebar rail must always render as a 16px circle (green #22c55e when online, red #ef4444 when offline) enclosed by a crisp 2px solid #ffffff border and subtle status glow.",
+        "section": "colors"
+      },
+      {
+        "name": "The Monospace Telemetry Rule",
+        "body": "Any string representing a filesystem path, file extension, byte count, percentage share, revision number (v1), drive UUID, or Merkle hash (crc32/sha256) must be set in JetBrains Mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Card Header & Vertical-Fit Stage Rule",
+        "body": ".viewport-header renders as a rounded card in normal document flow (margin: 1rem 1.4rem 0 1.4rem), #treemap-workspace fits 100% of the remaining vertical screen height (height: calc(100vh - 116px)), and stage overlays (host floor selector, breadcrumb pill, zoom dock, legend card, and drawer toggle) float cleanly over the stage with drop shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do place all tab-specific view options (.op-top-option-bar) inside the rounded top header card (.viewport-header in normal document flow, margin: 1rem 1.4rem 0 1.4rem) and keep Sync Server in .sidebar-bottom.",
+      "Do keep the 5-card overview KPI strip (.metrics-strip) exclusively on the Dashboard tab (activeTab === 'dashboard').",
+      "Do maintain the 8px top and bottom dark frame borders on .app-shell with zero right-side border (padding: 8px 0 8px 0).",
+      "Do use directional double-chevron arrows (» to expand, « to collapse) on #sidebar-toggle-btn and a 2px solid #ffffff border on the green/red .status-orb.",
+      "Do render all hashes, file paths, drive UUIDs, and byte counts in JetBrains Mono (var(--font-mono))."
+    ],
+    "donts": [
+      "Don't allow scrolling in .main-viewport to scroll or shift the fixed left .sidebar-rail.",
+      "Don't make .viewport-header position: sticky or position: fixed, and don't let #treemap-workspace overflow vertically—keep #treemap-workspace fitted to the remaining screen height (height: calc(100vh - 116px)) with floating HUD overlays for the legend, breadcrumb pill, host floor bar, and +/− zoom controls.",
+      "Don't introduce purple-to-blue AI gradients, dark-mode neon glow on the workspace canvas, or ungrounded decorative charts disconnected from real scan metadata."
+    ]
+  }
+}

@@ -122,3 +122,69 @@ func TestWriteOutputJSONFormat(t *testing.T) {
 		t.Errorf("unexpected JSON output: %+v", decoded)
 	}
 }
+
+func TestWriteDiffAndDuplicatesReports(t *testing.T) {
+	var diffBuf bytes.Buffer
+	WriteDiffReport(&diffBuf, models.DiffReport{
+		BaseScan:   models.ScanSummary{ID: "s1", Hostname: "h1", RootPath: "/a"},
+		TargetScan: models.ScanSummary{ID: "s2", Hostname: "h2", RootPath: "/b"},
+		Added:      1,
+		Changes: []models.DiffItem{
+			{RelPath: "new.txt", Change: models.DiffAdded, TargetHash: "1234", TargetSize: 42},
+		},
+	}, false, true)
+	if !strings.Contains(diffBuf.String(), "+ [ADDED]") || !strings.Contains(diffBuf.String(), "new.txt") {
+		t.Errorf("unexpected diff output: %s", diffBuf.String())
+	}
+
+	var dupBuf bytes.Buffer
+	WriteDuplicates(&dupBuf, []models.DuplicateGroup{
+		{
+			Hash:        "deadbeef",
+			Size:        100,
+			Count:       2,
+			WastedBytes: 100,
+			Files: []models.DuplicateFileRef{
+				{ScanID: "s1", Hostname: "h1", AbsPath: "/a/1.txt", RelPath: "1.txt"},
+				{ScanID: "s1", Hostname: "h1", AbsPath: "/a/2.txt", RelPath: "2.txt"},
+			},
+		},
+	}, false)
+	if !strings.Contains(dupBuf.String(), "deadbeef") || !strings.Contains(dupBuf.String(), "Wasted: 100 bytes") {
+		t.Errorf("unexpected duplicates output: %s", dupBuf.String())
+	}
+
+	var liveBuf bytes.Buffer
+	WriteLiveEvent(&liveBuf, models.LiveEvent{
+		RootPath: "/a",
+		RootHash: "cafebabe",
+		Added:    1,
+		Modified: 1,
+		ScanID:   "scan-live-2",
+		Changes: []models.DiffItem{
+			{RelPath: "created.txt", Change: models.DiffAdded, TargetHash: "1111", TargetSize: 10},
+			{RelPath: "edited.txt", Change: models.DiffModified, BaseHash: "2222", TargetHash: "3333", BaseSize: 5, TargetSize: 8},
+		},
+	}, false, true)
+	liveText := liveBuf.String()
+	if !strings.Contains(liveText, "Change detected (+1 added, -0 deleted, ~1 modified)") ||
+		!strings.Contains(liveText, "+ [ADDED]") ||
+		!strings.Contains(liveText, "~ [MODIFIED]") ||
+		!strings.Contains(liveText, "Scan stored on server: scan-live-2") {
+		t.Errorf("unexpected live event output: %s", liveText)
+	}
+
+	var liveJSONBuf bytes.Buffer
+	WriteLiveEvent(&liveJSONBuf, models.LiveEvent{
+		RootPath: "/a",
+		RootHash: "cafebabe",
+		Added:    1,
+	}, true, true)
+	var decodedLive models.LiveEvent
+	if err := json.Unmarshal(liveJSONBuf.Bytes(), &decodedLive); err != nil {
+		t.Fatalf("failed to unmarshal live JSON event: %v", err)
+	}
+	if decodedLive.RootHash != "cafebabe" || decodedLive.Added != 1 {
+		t.Errorf("unexpected decoded live event: %+v", decodedLive)
+	}
+}

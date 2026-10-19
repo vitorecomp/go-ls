@@ -5,6 +5,8 @@
 *.so
 *.dylib
 go-ls
+go-ls-server
+go-ls-client
 ls
 
 # Test binary, built with `go test -c`
@@ -13,6 +15,11 @@ ls
 # Output of the go coverage tool
 *.out
 coverage.txt
+
+# Next.js frontend build & dependencies
+web/node_modules/
+web/.next/
+web/out/
 
 # Dependency directories
 # vendor/

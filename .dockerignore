@@ -1,0 +1,12 @@
+.git
+.vscode
+*.exe
+*.test
+*.out
+go-ls
+go-ls-server
+go-ls-client
+coverage.txt
+web/node_modules
+web/.next
+web/out
