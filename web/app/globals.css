@@ -746,14 +746,15 @@ body {
 }
 
 .panel-header {
-  padding: 0.85rem 1.25rem;
+  margin-inline: 1.25rem;
+  padding: 0.85rem 0;
   border-bottom: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.85rem;
   flex-wrap: wrap;
-  background: var(--bg-subtle);
+  background: transparent;
   flex-shrink: 0;
 }
 
@@ -1090,8 +1091,9 @@ body {
 }
 
 .history-card-header {
-  padding: 0.85rem 1.15rem;
-  background: var(--bg-subtle);
+  margin-inline: 1.15rem;
+  padding: 0.85rem 0;
+  background: transparent;
   border-bottom: 1px solid var(--border-default);
   display: flex;
   align-items: center;
@@ -1163,9 +1165,10 @@ body {
 }
 
 .hexbin-card-header {
-  padding: 0.7rem 1.1rem;
+  margin-inline: 1.1rem;
+  padding: 0.7rem 0;
   border-bottom: 1px solid var(--border-default);
-  background: var(--bg-subtle);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2193,9 +2196,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-subtle);
+  margin-inline: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border-default);
+  background: transparent;
   border-radius: 12px 12px 0 0;
 }
 
