@@ -97,13 +97,60 @@ go run . -R --live --server=http://localhost:8080 --tag=live ./pkg
 
 ---
 
-## Building Binaries
+## Global Installation & Building Binaries
+
+You can install `go-ls`, `go-ls-server`, `go-ls-client`, and the compiled Next.js Web UI bundle globally so `go-ls` is available from any directory in your terminal.
+
+### Option 1: Automated Global Install (`make install` / `./scripts/install.sh`)
+
+The installer compiles the Go binaries and static Next.js frontend (`web/out`), installing the binaries onto your `PATH` (`~/.local/bin` or `$(go env GOPATH)/bin` for user installs, or `/usr/local/bin` for system-wide installs) and placing the Web UI bundle into `~/.local/share/go-ls/web` (or `/usr/local/share/go-ls/web`):
 
 ```bash
-# Build unified CLI (client + server subcommands)
-go build -o go-ls .
+# Install globally for the current user (no sudo required)
+make install
+# or directly:
+./scripts/install.sh
 
-# Or build standalone server and client binaries
+# Install system-wide to /usr/local/bin and /usr/local/share/go-ls/web (uses sudo if needed)
+make install-system
+# or directly:
+./scripts/install.sh --system
+
+# Custom prefix or Go-binaries-only install
+./scripts/install.sh --prefix=/opt/go-ls
+./scripts/install.sh --skip-web
+
+# Verify global installation from any directory
+go-ls --version
+
+# Uninstall globally installed binaries and Web UI assets
+make uninstall
+# or:
+./scripts/install.sh --uninstall
+```
+
+### Option 2: Go Toolchain Install (`go install`)
+
+To install the CLI binaries directly into `$(go env GOBIN)` or `$(go env GOPATH)/bin` (typically `~/go/bin`):
+
+```bash
+# From a local clone (installs go-ls, server, and client)
+make install-go
+# or:
+go install . ./cmd/server ./cmd/client
+
+# Or install the unified go-ls CLI directly from GitHub
+go install github.com/vitorecomp/go-ls@latest
+```
+
+### Option 3: Local Binary Build (`make build` / `go build`)
+
+```bash
+# Build Next.js frontend (web/out) and all Go binaries into the repository root
+make build
+
+# Or build individual Go binaries manually
+go build -o go-ls .
 go build -o go-ls-server ./cmd/server
 go build -o go-ls-client ./cmd/client
 ```

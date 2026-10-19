@@ -14,7 +14,7 @@ services:
     networks:
       - gols-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-gols} -d $${POSTGRES_DB:-gols}"]
+      test: "pg_isready -U $${POSTGRES_USER:-gols} -d $${POSTGRES_DB:-gols}"
       interval: 5s
       timeout: 5s
       retries: 10
@@ -38,7 +38,7 @@ services:
     networks:
       - gols-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      test: "wget -qO- http://localhost:8080/healthz"
       interval: 10s
       timeout: 5s
       retries: 5

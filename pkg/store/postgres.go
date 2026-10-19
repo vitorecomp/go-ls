@@ -36,6 +36,15 @@ ALTER TABLE scans ADD COLUMN IF NOT EXISTS drive_id TEXT NOT NULL DEFAULT 'defau
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+UPDATE scans SET computer_id = hostname WHERE computer_id = '' AND hostname <> '';
+UPDATE scans SET drive_id = 'default-drive' WHERE drive_id = '';
+
+DELETE FROM scans a USING scans b
+WHERE a.computer_id = b.computer_id
+  AND a.drive_id = b.drive_id
+  AND a.root_path = b.root_path
+  AND (a.updated_at, a.created_at, a.id) < (b.updated_at, b.created_at, b.id);
+
 CREATE TABLE IF NOT EXISTS scan_entries (
 	id BIGSERIAL PRIMARY KEY,
 	scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,

@@ -3,6 +3,7 @@
 FROM docker.io/library/node:22-alpine AS web-builder
 WORKDIR /web
 COPY web/package*.json ./
+RUN sed -i '/"resolved":/d' package-lock.json 2>/dev/null || true
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build

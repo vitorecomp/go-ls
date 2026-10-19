@@ -113,8 +113,23 @@ func resolveUIDir(preferred string) string {
 	candidates := []string{
 		preferred,
 		"./web/out",
-		"/usr/local/share/go-ls/web",
 	}
+	if exePath, err := os.Executable(); err == nil && exePath != "" {
+		if resolvedExe, err := filepath.EvalSymlinks(exePath); err == nil {
+			exePath = resolvedExe
+		}
+		candidates = append(candidates, filepath.Join(filepath.Dir(exePath), "..", "share", "go-ls", "web"))
+	}
+	if xdgDataHome := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgDataHome != "" {
+		candidates = append(candidates, filepath.Join(xdgDataHome, "go-ls", "web"))
+	}
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		candidates = append(candidates, filepath.Join(homeDir, ".local", "share", "go-ls", "web"))
+	}
+	candidates = append(candidates,
+		"/usr/local/share/go-ls/web",
+		"/usr/share/go-ls/web",
+	)
 	for _, dir := range candidates {
 		if dir == "" {
 			continue

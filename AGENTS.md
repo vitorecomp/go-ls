@@ -30,7 +30,7 @@ This file provides guidance for AI coding agents working in the `go-ls` reposito
 - `pkg/client/`: HTTP client (`client.go`) for communicating with `pkg/server`.
 - `pkg/output/`: Local console formatters (`console.go`, `controller.go`) and client-server report formatters (`report.go`).
 - `pkg/cli/`: Kong CLI structs (`cli.go`), argument normalization (`NormalizeArgs`), command execution runners (`runner.go`), and dev hot-reload supervisor (`dev.go`).
-- `scripts/`: Helper scripts including `scripts/seed-fake-data.sh` (`scripts/seed/main.go`) to load realistic multi-computer, multi-drive, multi-revision fake data into the server.
+- `Makefile` & `scripts/`: Build/install automation (`Makefile`, `scripts/install.sh` for global CLI + Web UI installation) and `scripts/seed-fake-data.sh` (`scripts/seed/main.go`) to load realistic multi-computer, multi-drive, multi-revision fake data into the server.
 - `documents/`: Project documentation (`README.md`, `architecture.md`, `data-model.md`, `design.md`, `todo.md`, `usage.md`, `contributing.md`).
 
 ## Build, Test, and Verification Commands

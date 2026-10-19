@@ -14,7 +14,7 @@ services:
     networks:
       - gols-dev-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-gols} -d $${POSTGRES_DB:-gols}"]
+      test: "pg_isready -U $${POSTGRES_USER:-gols} -d $${POSTGRES_DB:-gols}"
       interval: 5s
       timeout: 5s
       retries: 10

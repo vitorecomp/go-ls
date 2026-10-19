@@ -1,6 +1,32 @@
 # Usage & Recipes Guide
 
-This guide covers deploying the `go-ls` server and Next.js Web UI with **Podman Compose** or **Docker Compose**, uploading scans from clients, monitoring directories in real time with `--live`, inspecting directory history, comparing snapshots, finding duplicates, and running local scans.
+This guide covers installing `go-ls` globally, deploying the `go-ls` server and Next.js Web UI with **Podman Compose** or **Docker Compose**, uploading scans from clients, monitoring directories in real time with `--live`, inspecting directory history, comparing snapshots, finding duplicates, and running local scans.
+
+---
+
+## 0. Global Installation
+
+You can install `go-ls` (`go-ls`, `go-ls-server`, `go-ls-client`) and the compiled Next.js Web UI bundle globally so you can invoke `go-ls` from any directory:
+
+```bash
+# Install for the current user (~/.local/bin + ~/.local/share/go-ls/web)
+make install
+# or:
+./scripts/install.sh
+
+# Install system-wide (/usr/local/bin + /usr/local/share/go-ls/web)
+make install-system
+# or:
+./scripts/install.sh --system
+
+# Install CLI binaries via the Go toolchain into $(go env GOPATH)/bin
+make install-go
+# or:
+go install . ./cmd/server ./cmd/client
+
+# Remove globally installed binaries and Web UI assets
+make uninstall
+```
 
 ---
 

@@ -44,12 +44,16 @@ go vet ./...
 go test -v -race ./...
 ```
 
-### 4. Build All Go Binaries
+### 4. Build or Install Go Binaries Globally
 
 ```bash
+# Build local binaries in the repository root
 go build -o go-ls .
 go build -o go-ls-server ./cmd/server
 go build -o go-ls-client ./cmd/client
+
+# Or install binaries and Web UI assets globally
+make install
 ```
 
 ### 5. Test with Podman Compose or Docker Compose
