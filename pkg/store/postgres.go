@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS scans (
 	total_dirs INTEGER NOT NULL,
 	total_bytes BIGINT NOT NULL,
 	version INTEGER NOT NULL DEFAULT 1,
+	status TEXT NOT NULL DEFAULT 'completed',
+	has_baseline BOOLEAN NOT NULL DEFAULT FALSE,
+	baseline_hash TEXT NOT NULL DEFAULT '',
+	baseline_entries_json JSONB NOT NULL DEFAULT '[]'::jsonb,
 	created_at TIMESTAMPTZ NOT NULL,
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -34,6 +38,10 @@ CREATE TABLE IF NOT EXISTS scans (
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS computer_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS drive_id TEXT NOT NULL DEFAULT 'default-drive';
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed';
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS has_baseline BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS baseline_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS baseline_entries_json JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE scans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 UPDATE scans SET computer_id = hostname WHERE computer_id = '' AND hostname <> '';
@@ -78,9 +86,15 @@ CREATE TABLE IF NOT EXISTS scan_history (
 	created_at TIMESTAMPTZ NOT NULL
 );
 
+DELETE FROM scan_entries a USING scan_entries b
+WHERE a.scan_id = b.scan_id
+  AND a.rel_path = b.rel_path
+  AND a.id < b.id;
+
 CREATE INDEX IF NOT EXISTS idx_scans_computer_dir ON scans(computer_id, drive_id, root_path);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_scans_computer_dir_unique ON scans(computer_id, drive_id, root_path);
 CREATE INDEX IF NOT EXISTS idx_scan_entries_scan_id ON scan_entries(scan_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scan_entries_scan_rel_unique ON scan_entries(scan_id, rel_path);
 CREATE INDEX IF NOT EXISTS idx_scan_entries_hash ON scan_entries(hash);
 CREATE INDEX IF NOT EXISTS idx_scan_history_scan_id ON scan_history(scan_id, version DESC);
 `
@@ -170,12 +184,15 @@ func (p *PostgresStore) SaveScan(ctx context.Context, scan models.ScanRecord) (*
 	}
 
 	merged := MergeScanUpdate(existing, scan)
+	merged.Status = models.ScanStatusCompleted
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO scans (
 			id, tag, computer_id, hostname, drive_id, root_path, hash_algo, root_hash,
-			total_files, total_dirs, total_bytes, version, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			total_files, total_dirs, total_bytes, version, status,
+			has_baseline, baseline_hash, baseline_entries_json,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, FALSE, '', '[]'::jsonb, $14, $15)
 		ON CONFLICT (id) DO UPDATE SET
 			tag = EXCLUDED.tag,
 			computer_id = EXCLUDED.computer_id,
@@ -188,6 +205,10 @@ func (p *PostgresStore) SaveScan(ctx context.Context, scan models.ScanRecord) (*
 			total_dirs = EXCLUDED.total_dirs,
 			total_bytes = EXCLUDED.total_bytes,
 			version = EXCLUDED.version,
+			status = EXCLUDED.status,
+			has_baseline = FALSE,
+			baseline_hash = '',
+			baseline_entries_json = '[]'::jsonb,
 			updated_at = EXCLUDED.updated_at
 	`,
 		merged.ID,
@@ -202,6 +223,7 @@ func (p *PostgresStore) SaveScan(ctx context.Context, scan models.ScanRecord) (*
 		merged.TotalDirs,
 		merged.TotalBytes,
 		merged.Version,
+		merged.Status,
 		merged.CreatedAt,
 		merged.UpdatedAt,
 	)
@@ -286,11 +308,362 @@ func (p *PostgresStore) SaveScan(ctx context.Context, scan models.ScanRecord) (*
 	return &summary, nil
 }
 
+// SaveScanBatch appends or upserts an incremental batch of scan entries inside PostgreSQL,
+// finalizing the root hash and scan_history revision when req.Final is true.
+func (p *PostgresStore) SaveScanBatch(ctx context.Context, req models.ScanBatchRequest) (*models.ScanSummary, error) {
+	norm := NormalizeScanBatch(req)
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("starting batch transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	lockKey := norm.ComputerID + "|" + norm.DriveID + "|" + norm.RootPath
+	if norm.RootPath == "" {
+		lockKey = "id|" + norm.ID
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey); err != nil {
+		return nil, fmt.Errorf("acquiring batch scan lock: %w", err)
+	}
+
+	var existing *models.ScanRecord
+	if req.ID != "" {
+		if rec, err := p.getScanTx(ctx, tx, req.ID); err == nil {
+			existing = rec
+		} else if !errors.Is(err, ErrScanNotFound) {
+			return nil, err
+		}
+	}
+	if existing == nil && norm.RootPath != "" {
+		var matchID string
+		err := tx.QueryRowContext(ctx, `
+			SELECT id FROM scans
+			WHERE computer_id = $1 AND drive_id = $2 AND root_path = $3
+			LIMIT 1
+			FOR UPDATE
+		`, norm.ComputerID, norm.DriveID, norm.RootPath).Scan(&matchID)
+		if err == nil && matchID != "" {
+			rec, getErr := p.getScanTx(ctx, tx, matchID)
+			if getErr != nil {
+				return nil, getErr
+			}
+			existing = rec
+		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("looking up existing scan for batch: %w", err)
+		}
+	}
+
+	if req.Resume && existing == nil && norm.RootPath == "" {
+		return nil, fmt.Errorf("%w: %s", ErrScanNotFound, req.ID)
+	}
+
+	var (
+		hasBaseline     bool
+		baselineHash    string
+		rawBaselineJSON []byte
+	)
+	if existing != nil {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT has_baseline, baseline_hash, baseline_entries_json
+			FROM scans
+			WHERE id = $1
+		`, existing.ID).Scan(&hasBaseline, &baselineHash, &rawBaselineJSON); err != nil {
+			return nil, fmt.Errorf("reading scan baseline state: %w", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	if existing == nil {
+		existing = &models.ScanRecord{
+			ScanSummary: models.ScanSummary{
+				ID:         norm.ID,
+				Tag:        norm.Tag,
+				ComputerID: norm.ComputerID,
+				Hostname:   norm.Hostname,
+				DriveID:    norm.DriveID,
+				RootPath:   norm.RootPath,
+				HashAlgo:   norm.HashAlgo,
+				Status:     models.ScanStatusInProgress,
+				Version:    1,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		}
+		rawBaselineJSON = []byte("[]")
+	} else {
+		snapshotBaseline := func() error {
+			entries := existing.Entries
+			if entries == nil {
+				entries = []models.ScanEntry{}
+			}
+			encoded, mErr := json.Marshal(entries)
+			if mErr != nil || len(encoded) == 0 || string(encoded) == "null" {
+				encoded = []byte("[]")
+			}
+			hasBaseline = true
+			baselineHash = existing.RootHash
+			rawBaselineJSON = encoded
+			return nil
+		}
+
+		if !req.Resume && req.BatchIndex == 0 {
+			if existing.Status != models.ScanStatusInProgress {
+				if err := snapshotBaseline(); err != nil {
+					return nil, err
+				}
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM scan_entries WHERE scan_id = $1`, existing.ID); err != nil {
+				return nil, fmt.Errorf("clearing previous scan entries for new batch session: %w", err)
+			}
+			existing.Entries = nil
+			existing.Status = models.ScanStatusInProgress
+		} else if req.Resume && existing.Status != models.ScanStatusInProgress {
+			if !hasBaseline {
+				if err := snapshotBaseline(); err != nil {
+					return nil, err
+				}
+			}
+			existing.Status = models.ScanStatusInProgress
+		}
+
+		if norm.Tag != "" {
+			existing.Tag = norm.Tag
+		}
+		if norm.Hostname != "" && norm.Hostname != "unknown-host" {
+			existing.Hostname = norm.Hostname
+		}
+		if norm.ComputerID != "" && norm.ComputerID != "unknown-host" {
+			existing.ComputerID = norm.ComputerID
+		}
+		if norm.DriveID != "" && norm.DriveID != "default-drive" {
+			existing.DriveID = norm.DriveID
+		}
+		if norm.RootPath != "" {
+			existing.RootPath = norm.RootPath
+		}
+		if req.HashAlgo != "" {
+			existing.HashAlgo = req.HashAlgo
+		}
+		existing.UpdatedAt = now
+		if len(rawBaselineJSON) == 0 || string(rawBaselineJSON) == "null" {
+			rawBaselineJSON = []byte("[]")
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO scans (
+			id, tag, computer_id, hostname, drive_id, root_path, hash_algo, root_hash,
+			total_files, total_dirs, total_bytes, version, status,
+			has_baseline, baseline_hash, baseline_entries_json,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18)
+		ON CONFLICT (id) DO UPDATE SET
+			tag = EXCLUDED.tag,
+			computer_id = EXCLUDED.computer_id,
+			hostname = EXCLUDED.hostname,
+			drive_id = EXCLUDED.drive_id,
+			root_path = EXCLUDED.root_path,
+			hash_algo = EXCLUDED.hash_algo,
+			status = EXCLUDED.status,
+			has_baseline = EXCLUDED.has_baseline,
+			baseline_hash = EXCLUDED.baseline_hash,
+			baseline_entries_json = EXCLUDED.baseline_entries_json,
+			updated_at = EXCLUDED.updated_at
+	`,
+		existing.ID,
+		existing.Tag,
+		existing.ComputerID,
+		existing.Hostname,
+		existing.DriveID,
+		existing.RootPath,
+		existing.HashAlgo,
+		existing.RootHash,
+		existing.TotalFiles,
+		existing.TotalDirs,
+		existing.TotalBytes,
+		existing.Version,
+		existing.Status,
+		hasBaseline,
+		baselineHash,
+		string(rawBaselineJSON),
+		existing.CreatedAt,
+		existing.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("upserting scan batch header: %w", err)
+	}
+
+	if len(req.Entries) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO scan_entries (
+				scan_id, rel_path, abs_path, name, is_dir, size,
+				mode, owner_name, group_name, mod_time, hash
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			ON CONFLICT (scan_id, rel_path) DO UPDATE SET
+				abs_path = EXCLUDED.abs_path,
+				name = EXCLUDED.name,
+				is_dir = EXCLUDED.is_dir,
+				size = EXCLUDED.size,
+				mode = EXCLUDED.mode,
+				owner_name = EXCLUDED.owner_name,
+				group_name = EXCLUDED.group_name,
+				mod_time = EXCLUDED.mod_time,
+				hash = EXCLUDED.hash
+		`)
+		if err != nil {
+			return nil, fmt.Errorf("preparing batch entry upsert: %w", err)
+		}
+		defer stmt.Close()
+
+		for _, e := range req.Entries {
+			if _, err := stmt.ExecContext(ctx,
+				existing.ID,
+				e.RelPath,
+				e.AbsPath,
+				e.Name,
+				e.IsDir,
+				e.Size,
+				e.Mode,
+				e.Owner,
+				e.Group,
+				e.ModTime,
+				e.Hash,
+			); err != nil {
+				return nil, fmt.Errorf("upserting batch entry %q: %w", e.RelPath, err)
+			}
+		}
+	}
+
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN NOT is_dir THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN is_dir THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN NOT is_dir THEN size ELSE 0 END), 0)
+		FROM scan_entries
+		WHERE scan_id = $1
+	`, existing.ID).Scan(&existing.TotalFiles, &existing.TotalDirs, &existing.TotalBytes); err != nil {
+		return nil, fmt.Errorf("recalculating batch scan totals: %w", err)
+	}
+
+	if !req.Final {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE scans
+			SET total_files = $2, total_dirs = $3, total_bytes = $4, updated_at = $5
+			WHERE id = $1
+		`, existing.ID, existing.TotalFiles, existing.TotalDirs, existing.TotalBytes, existing.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("updating scan batch totals: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("committing batch transaction: %w", err)
+		}
+		summary := existing.ScanSummary
+		return &summary, nil
+	}
+
+	fullRec, err := p.getScanTx(ctx, tx, existing.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	rootHash := req.RootHash
+	if rootHash == "" || req.Resume {
+		rootHash = models.ComputeRootHash(models.HashAlgorithm(fullRec.HashAlgo), fullRec.Entries)
+	}
+	fullRec.RootHash = rootHash
+	fullRec.UpdatedAt = now
+
+	var merged models.ScanRecord
+	if hasBaseline {
+		var baseEntries []models.ScanEntry
+		if len(rawBaselineJSON) > 0 {
+			_ = json.Unmarshal(rawBaselineJSON, &baseEntries)
+		}
+		baseRec := *fullRec
+		baseRec.RootHash = baselineHash
+		baseRec.Version = existing.Version
+		baseRec.Entries = baseEntries
+		baseRec.History = fullRec.History
+		merged = MergeScanUpdate(&baseRec, *fullRec)
+	} else {
+		merged = MergeScanUpdate(nil, *fullRec)
+	}
+	merged.Status = models.ScanStatusCompleted
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE scans
+		SET root_hash = $2,
+		    total_files = $3,
+		    total_dirs = $4,
+		    total_bytes = $5,
+		    version = $6,
+		    status = $7,
+		    has_baseline = FALSE,
+		    baseline_hash = '',
+		    baseline_entries_json = '[]'::jsonb,
+		    updated_at = $8
+		WHERE id = $1
+	`,
+		merged.ID,
+		merged.RootHash,
+		merged.TotalFiles,
+		merged.TotalDirs,
+		merged.TotalBytes,
+		merged.Version,
+		merged.Status,
+		merged.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("finalizing scan batch: %w", err)
+	}
+
+	if (!hasBaseline || merged.Version > existing.Version) && len(merged.History) > 0 {
+		latestHist := merged.History[0]
+		changes := latestHist.Changes
+		if changes == nil {
+			changes = []models.DiffItem{}
+		}
+		changesJSON, err := json.Marshal(changes)
+		if err != nil || len(changesJSON) == 0 || string(changesJSON) == "null" {
+			changesJSON = []byte("[]")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO scan_history (
+				scan_id, version, tag, previous_hash, root_hash,
+				total_files, total_dirs, total_bytes, identical,
+				added, deleted, modified, changes_json, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		`,
+			merged.ID,
+			latestHist.Version,
+			latestHist.Tag,
+			latestHist.PreviousHash,
+			latestHist.RootHash,
+			latestHist.TotalFiles,
+			latestHist.TotalDirs,
+			latestHist.TotalBytes,
+			latestHist.Identical,
+			latestHist.Added,
+			latestHist.Deleted,
+			latestHist.Modified,
+			string(changesJSON),
+			latestHist.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("inserting finalized scan history entry: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing finalized batch transaction: %w", err)
+	}
+
+	summary := merged.ScanSummary
+	return &summary, nil
+}
+
 // ListScans returns all stored scan summaries ordered by UpdatedAt descending.
 func (p *PostgresStore) ListScans(ctx context.Context) ([]models.ScanSummary, error) {
 	rows, err := p.db.QueryContext(ctx, `
 		SELECT id, tag, computer_id, hostname, drive_id, root_path, hash_algo, root_hash,
-		       total_files, total_dirs, total_bytes, version, created_at, updated_at
+		       status, total_files, total_dirs, total_bytes, version, created_at, updated_at
 		FROM scans
 		ORDER BY updated_at DESC, created_at DESC, id ASC
 	`)
@@ -304,7 +677,7 @@ func (p *PostgresStore) ListScans(ctx context.Context) ([]models.ScanSummary, er
 		var s models.ScanSummary
 		if err := rows.Scan(
 			&s.ID, &s.Tag, &s.ComputerID, &s.Hostname, &s.DriveID, &s.RootPath, &s.HashAlgo, &s.RootHash,
-			&s.TotalFiles, &s.TotalDirs, &s.TotalBytes, &s.Version, &s.CreatedAt, &s.UpdatedAt,
+			&s.Status, &s.TotalFiles, &s.TotalDirs, &s.TotalBytes, &s.Version, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning summary row: %w", err)
 		}
@@ -339,7 +712,7 @@ type sqlQueryer interface {
 func (p *PostgresStore) queryScan(ctx context.Context, q sqlQueryer, scanID string, forUpdate bool) (*models.ScanRecord, error) {
 	query := `
 		SELECT id, tag, computer_id, hostname, drive_id, root_path, hash_algo, root_hash,
-		       total_files, total_dirs, total_bytes, version, created_at, updated_at
+		       status, total_files, total_dirs, total_bytes, version, created_at, updated_at
 		FROM scans
 		WHERE id = $1
 	`
@@ -350,7 +723,7 @@ func (p *PostgresStore) queryScan(ctx context.Context, q sqlQueryer, scanID stri
 	var rec models.ScanRecord
 	err := q.QueryRowContext(ctx, query, scanID).Scan(
 		&rec.ID, &rec.Tag, &rec.ComputerID, &rec.Hostname, &rec.DriveID, &rec.RootPath, &rec.HashAlgo, &rec.RootHash,
-		&rec.TotalFiles, &rec.TotalDirs, &rec.TotalBytes, &rec.Version, &rec.CreatedAt, &rec.UpdatedAt,
+		&rec.Status, &rec.TotalFiles, &rec.TotalDirs, &rec.TotalBytes, &rec.Version, &rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrScanNotFound, scanID)

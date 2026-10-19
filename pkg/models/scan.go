@@ -2,6 +2,9 @@ package models
 
 import (
 	"cmp"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -9,6 +12,22 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+const (
+	// ScanStatusInProgress indicates a scan is currently receiving incremental batches.
+	ScanStatusInProgress = "in_progress"
+	// ScanStatusCompleted indicates all batches have been received and the snapshot is finalized.
+	ScanStatusCompleted = "completed"
+)
+
+// GenerateScanID returns a unique time-prefixed scan identifier.
+func GenerateScanID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("scan-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("scan-%s-%s", time.Now().UTC().Format("20060102-150405"), hex.EncodeToString(b))
+}
 
 // ScanEntry represents a single file or directory recorded during a client scan.
 type ScanEntry struct {
@@ -34,12 +53,29 @@ type ScanSummary struct {
 	RootPath   string    `json:"root_path"`
 	HashAlgo   string    `json:"hash_algo"`
 	RootHash   string    `json:"root_hash"`
+	Status     string    `json:"status,omitempty"`
 	TotalFiles int       `json:"total_files"`
 	TotalDirs  int       `json:"total_dirs"`
 	TotalBytes int64     `json:"total_bytes"`
 	Version    int       `json:"version"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// ScanBatchRequest represents an incremental batch of scan entries sent to the server.
+type ScanBatchRequest struct {
+	ID         string      `json:"id"`
+	Tag        string      `json:"tag,omitempty"`
+	ComputerID string      `json:"computer_id"`
+	Hostname   string      `json:"hostname"`
+	DriveID    string      `json:"drive_id"`
+	RootPath   string      `json:"root_path"`
+	HashAlgo   string      `json:"hash_algo"`
+	RootHash   string      `json:"root_hash,omitempty"`
+	Entries    []ScanEntry `json:"entries,omitempty"`
+	BatchIndex int         `json:"batch_index"`
+	Final      bool        `json:"final"`
+	Resume     bool        `json:"resume,omitempty"`
 }
 
 // ScanHistoryEntry records a single revision and change diff in the history of a tracked directory.
@@ -268,15 +304,7 @@ func BuildScanRecord(id, tag, hostname, rootPath string, algo HashAlgorithm, fil
 		return cmp.Compare(a.RelPath, b.RelPath)
 	})
 
-	// Compute root hash from direct children of rootPath (or all entries in sorted order).
-	childHashes := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if filepath.Dir(filepath.FromSlash(e.RelPath)) == "." {
-			childHashes = append(childHashes, e.Hash)
-		}
-	}
-	var rootHolder File
-	rootHash := rootHolder.ComputeDirHash(algo, childHashes)
+	rootHash := ComputeRootHash(algo, entries)
 	now := time.Now().UTC()
 
 	return ScanRecord{
@@ -289,6 +317,7 @@ func BuildScanRecord(id, tag, hostname, rootPath string, algo HashAlgorithm, fil
 			RootPath:   absRoot,
 			HashAlgo:   string(algo),
 			RootHash:   rootHash,
+			Status:     ScanStatusCompleted,
 			TotalFiles: totalFiles,
 			TotalDirs:  totalDirs,
 			TotalBytes: totalBytes,
@@ -298,6 +327,21 @@ func BuildScanRecord(id, tag, hostname, rootPath string, algo HashAlgorithm, fil
 		},
 		Entries: entries,
 	}
+}
+
+// ComputeRootHash computes the Merkle root hash from direct children of rootPath in entries.
+func ComputeRootHash(algo HashAlgorithm, entries []ScanEntry) string {
+	if algo == "" {
+		algo = HashCRC32
+	}
+	childHashes := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if filepath.Dir(filepath.FromSlash(e.RelPath)) == "." {
+			childHashes = append(childHashes, e.Hash)
+		}
+	}
+	var rootHolder File
+	return rootHolder.ComputeDirHash(algo, childHashes)
 }
 
 // ComputeDiff compares two ScanRecords by relative path and reports added, deleted,

@@ -10,6 +10,9 @@ import (
 // DefaultServerURL is the default endpoint used by client commands when --server is not specified.
 const DefaultServerURL = "http://localhost:8080"
 
+// DefaultBatchSize is the default number of entries sent per incremental server upload batch.
+const DefaultBatchSize = 250
+
 // ScanCmd scans local files/directories and optionally uploads the inventory to the go-ls server.
 type ScanCmd struct {
 	ShowHidden bool   `help:"Show hidden files (entries starting with '.')." name:"all" short:"a"`
@@ -24,8 +27,10 @@ type ScanCmd struct {
 	Live       bool   `help:"Keep monitoring the directory for changes using filesystem events (implies --hash)." name:"live"`
 	NoProgress bool   `help:"Disable the progress bar during recursive (-R) scans." name:"no-progress"`
 
-	ServerURL string `help:"Upload the completed scan to a go-ls server URL (e.g. http://localhost:8080)." env:"GOLS_SERVER_URL" name:"server"`
-	ScanID    string `help:"Optional custom ID for the uploaded scan (auto-generated if omitted)." name:"scan-id"`
+	ServerURL string `help:"Upload the scan to a go-ls server URL (e.g. http://localhost:8080)." env:"GOLS_SERVER_URL" name:"server"`
+	ScanID    string `help:"Optional custom ID for the scan (auto-generated if omitted)." name:"scan-id"`
+	Resume    string `help:"Resume an interrupted or previous scan by its scan ID." name:"resume"`
+	BatchSize int    `help:"Number of entries to send per incremental server batch." default:"250" name:"batch-size"`
 	Tag       string `help:"Optional label/tag to attach to the uploaded scan." name:"tag"`
 	Quiet     bool   `help:"Suppress local file listing output when uploading to the server." name:"quiet" short:"q"`
 
@@ -52,8 +57,8 @@ func (s ScanCmd) ToLookOptions() models.LookOptions {
 		algo = models.HashSHA256
 	}
 
-	// Uploading to the server, running --compare, or monitoring with --live automatically enables hashing.
-	enableHash := s.Hash || s.Compare || s.ServerURL != "" || s.Live
+	// Uploading to the server, resuming a scan, running --compare, or monitoring with --live automatically enables hashing.
+	enableHash := s.Hash || s.Compare || s.ServerURL != "" || s.Resume != "" || s.Live
 
 	return models.LookOptions{
 		Recursive:  s.Recursive,
@@ -80,7 +85,7 @@ func (s ScanCmd) ToOutputOptions() models.OutputOptions {
 	return models.OutputOptions{
 		Format:     format,
 		ShowHidden: s.ShowHidden,
-		Hash:       s.Hash || s.Compare || s.Live || s.ServerURL != "",
+		Hash:       s.Hash || s.Compare || s.Live || s.ServerURL != "" || s.Resume != "",
 		NoColor:    s.Color == "never",
 	}
 }

@@ -25,6 +25,8 @@ This document tracks completed engineering milestones and the prioritized backlo
 - [x] **Embedded Next.js Web Console & Container Stack (`web/`, `Containerfile`, `Dockerfile`)**
   - 7-view static Next.js UI (`Operations Overview Dashboard`, `Directory Tree`, `3D Cushion Map`, `File Types`, `Computers & Scans`, `Snapshot Diff`, `Duplicates`) served directly by the Go server on `/`.
   - Rootless Podman Compose (`podman-compose.yml` / `podman-compose.dev.yml`) and Docker Compose (`docker-compose.yml` / `docker-compose.dev.yml`) production and hot-reload dev stacks with PostgreSQL 16.
+- [x] **Incremental Batched Uploads & Resumable Scans (`--resume`, `--batch-size`, `POST /api/v1/scans/batch`)**
+  - Immediate `Scan ID` output on the first line of `go-ls`, incremental batch streaming during traversal, and scan resumption that skips re-hashing unchanged files (`mtime + size`).
 
 ---
 

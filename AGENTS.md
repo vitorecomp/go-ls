@@ -6,7 +6,7 @@ This file provides guidance for AI coding agents working in the `go-ls` reposito
 
 `go-ls` (`github.com/vitorecomp/go-ls`) is a client-server directory scanning, Merkle-hashing, backup comparison, and duplicate detection platform written in Go with an integrated Next.js frontend:
 
-- **Client (`go-ls scan`, `go-ls scans`, `go-ls diff`, `go-ls duplicates`, or `cmd/client`)**: Scans local directories concurrently, computes file checksums (`crc32` or `sha256`) and folder Merkle hashes (from combined child hashes), optionally monitors directories continuously for changes via OS filesystem events (`--live`), formats local output (`default`, `long`, `compare` CSV, `json` NDJSON), or uploads scan snapshots to the server to query/diff/deduplicate.
+- **Client (`go-ls scan`, `go-ls scans`, `go-ls diff`, `go-ls duplicates`, or `cmd/client`)**: Scans local directories concurrently, prints the resumable `Scan ID` as the first line of output, computes file checksums (`crc32` or `sha256`) and folder Merkle hashes (from combined child hashes), streams entries to the server incrementally in batches (`--batch-size`, `--resume`), optionally monitors directories continuously for changes via OS filesystem events (`--live`), or formats local output (`default`, `long`, `compare` CSV, `json` NDJSON).
 - **Server (`go-ls serve` or `cmd/server`)**: HTTP REST API server (`pkg/server`) that also serves the compiled Next.js static frontend (`web/out` or `/usr/local/share/go-ls/web`) on `/` (or proxies to the Next.js HMR dev server via `--dev` / `--ui-proxy`). Deployed via Podman Compose (`podman-compose.yml` + `Containerfile`) or Docker Compose (`docker-compose.yml` + `Dockerfile`) alongside PostgreSQL, with an in-memory fallback (`memory://`) for standalone use and hermetic testing.
 - **Web Frontend (`web/`)**: Next.js application (`output: 'export'`) using Vanilla CSS (`web/app/globals.css`) that interacts with `/api/v1/computers`, `/api/v1/scans`, `/api/v1/scans/{id}`, `/api/v1/scans/{id}/history`, `/api/v1/diff`, `/api/v1/duplicates`, and `/healthz`.
 
@@ -25,8 +25,8 @@ This file provides guidance for AI coding agents working in the `go-ls` reposito
   - `scan.go`: `Computer`, `ScanRecord`, `ScanSummary`, `ScanEntry`, `ScanHistoryEntry`, `DiffReport`, `DuplicateGroup`, `BuildScanRecord`, and `ComputeDiff`.
   - `options.go`: `LookOptions`, `OutputOptions`, `HashAlgorithm`, and `OutputFormat`.
 - `pkg/looker/`: Concurrent directory walker (`looker.go`) with bounded worker semaphore, bottom-up directory Merkle hashing, and `fsnotify`-backed live filesystem watcher (`watch.go`).
-- `pkg/store/`: Storage layer (`store.go`, `memory.go`, `postgres.go`) implementing `Store` (`SaveScan`, `ListScans`, `ListComputers`, `GetScan`, `GetScanHistory`, `DiffScans`, `FindDuplicates`).
-- `pkg/server/`: REST API and static frontend server (`server.go`) exposing `/`, `/healthz`, `/api/v1/computers`, `/api/v1/scans`, `/api/v1/scans/{id}`, `/api/v1/scans/{id}/history`, `/api/v1/diff`, and `/api/v1/duplicates`.
+- `pkg/store/`: Storage layer (`store.go`, `memory.go`, `postgres.go`) implementing `Store` (`SaveScan`, `SaveScanBatch`, `ListScans`, `ListComputers`, `GetScan`, `GetScanHistory`, `DiffScans`, `FindDuplicates`).
+- `pkg/server/`: REST API and static frontend server (`server.go`) exposing `/`, `/healthz`, `/api/v1/computers`, `/api/v1/scans`, `/api/v1/scans/batch`, `/api/v1/scans/{id}`, `/api/v1/scans/{id}/history`, `/api/v1/diff`, and `/api/v1/duplicates`.
 - `pkg/client/`: HTTP client (`client.go`) for communicating with `pkg/server`.
 - `pkg/output/`: Local console formatters (`console.go`, `controller.go`) and client-server report formatters (`report.go`).
 - `pkg/cli/`: Kong CLI structs (`cli.go`), argument normalization (`NormalizeArgs`), command execution runners (`runner.go`), and dev hot-reload supervisor (`dev.go`).

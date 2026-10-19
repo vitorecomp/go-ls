@@ -74,18 +74,22 @@ Once the server is running on port `8080`, open **`http://localhost:8080`** in y
 
 ## 2. Client-Server CLI Workflows
 
-### Upload or Update a Directory Scan (`go-ls scan`)
+### Upload or Resume an Incremental Directory Scan (`go-ls scan`)
 
-When `--server` (or `GOLS_SERVER_URL`) is provided, the client detects the computer ID and hard drive UUID, scans the target path, computes file and folder Merkle hashes, and uploads the snapshot to the server. Scanning the same directory again automatically updates the snapshot on the server (`v2`, `v3`, ...) and records the diff in the directory's change history:
+When `go-ls` runs a scan, the **very first line printed** is the `Scan ID` (`Scan ID: <id>`). When `--server` (or `GOLS_SERVER_URL`) is provided, discovered entries are streamed to the server incrementally in batches (`--batch-size=250` by default) via `POST /api/v1/scans/batch`. If a scan is interrupted, you can resume it using `--resume=<scan-id>`—`go-ls` fetches already-recorded entries from the server (or local checkpoint) and skips re-hashing unchanged files:
 
 ```bash
-# Scan ./pkg recursively and store it on the server
-go run . scan -R --server=http://localhost:8080 --scan-id=backup-pkg --tag=initial -q ./pkg
+# Scan ./pkg recursively and stream batches to the server
+go-ls -R --server=http://localhost:8080 --scan-id=backup-pkg --tag=initial -q ./pkg
+
+# Resume an interrupted or previous scan by its printed Scan ID
+go-ls --resume=backup-pkg --server=http://localhost:8080
 ```
 
 Output:
 
 ```text
+Scan ID: backup-pkg
 Scan stored on server:
   ID:         backup-pkg (v1)
   Tag:        initial
@@ -209,8 +213,10 @@ go run . -R --hash --json ./pkg
 | `--workers` | — | — | `0` | Number of concurrent traversal/hashing workers (`0` uses CPU count, minimum `4`). |
 | `--no-progress` | — | — | `false` | Disable the progress bar rendered to `stderr` during recursive (`-R`) scans. |
 | `--live` | — | — | `false` | Continuously monitor directories via OS filesystem events (`fsnotify`; implies `--hash`). |
-| `--server` | — | `GOLS_SERVER_URL` | `""` | Upload completed scan snapshots to a `go-ls` server URL (e.g. `http://localhost:8080`). |
-| `--scan-id` | — | — | `""` | Optional custom snapshot ID for the uploaded scan (auto-generated if omitted). |
+| `--server` | — | `GOLS_SERVER_URL` | `""` | Upload scan snapshots incrementally to a `go-ls` server URL (e.g. `http://localhost:8080`). |
+| `--scan-id` | — | — | `""` | Optional custom snapshot ID for the scan (auto-generated if omitted). |
+| `--resume` | — | — | `""` | Resume an interrupted or previous scan by its scan ID, skipping unchanged already-hashed files. |
+| `--batch-size` | — | — | `250` | Number of entries to send per incremental server batch. |
 | `--tag` | — | `GOLS_TAG` | `""` | Optional label/tag attached to the uploaded snapshot revision. |
 | `--quiet` | `-q` | — | `false` | Suppress local file listing output when uploading to `--server`. |
 

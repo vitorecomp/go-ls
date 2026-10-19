@@ -5,20 +5,30 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
 
+type memoryBaseline struct {
+	rootHash string
+	version  int
+	entries  []models.ScanEntry
+	history  []models.ScanHistoryEntry
+}
+
 // MemoryStore is a thread-safe in-memory implementation of Store.
 type MemoryStore struct {
-	mu    sync.RWMutex
-	scans map[string]models.ScanRecord
+	mu        sync.RWMutex
+	scans     map[string]models.ScanRecord
+	baselines map[string]memoryBaseline
 }
 
 // NewMemoryStore creates an initialized MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		scans: make(map[string]models.ScanRecord),
+		scans:     make(map[string]models.ScanRecord),
+		baselines: make(map[string]memoryBaseline),
 	}
 }
 
@@ -49,17 +59,153 @@ func (m *MemoryStore) SaveScan(_ context.Context, scan models.ScanRecord) (*mode
 	}
 
 	merged := MergeScanUpdate(existing, scan)
+	merged.Status = models.ScanStatusCompleted
+	delete(m.baselines, merged.ID)
 
-	entriesCopy := make([]models.ScanEntry, len(merged.Entries))
-	copy(entriesCopy, merged.Entries)
-	merged.Entries = entriesCopy
-
+	merged.Entries = cloneEntries(merged.Entries)
 	merged.History = cloneHistory(merged.History)
 
 	m.scans[merged.ID] = merged
 
 	summary := merged.ScanSummary
 	return &summary, nil
+}
+
+// SaveScanBatch appends or upserts a batch of scan entries for an in-progress scan,
+// finalizing the root hash and history revision when req.Final is true.
+func (m *MemoryStore) SaveScanBatch(_ context.Context, req models.ScanBatchRequest) (*models.ScanSummary, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	norm := NormalizeScanBatch(req)
+	var existing *models.ScanRecord
+	if req.ID != "" {
+		if rec, ok := m.scans[req.ID]; ok {
+			r := rec
+			existing = &r
+		}
+	}
+	if existing == nil && norm.RootPath != "" {
+		for _, rec := range m.scans {
+			if rec.ComputerID == norm.ComputerID &&
+				rec.DriveID == norm.DriveID &&
+				rec.RootPath == norm.RootPath {
+				r := rec
+				existing = &r
+				break
+			}
+		}
+	}
+
+	if req.Resume && existing == nil && norm.RootPath == "" {
+		return nil, fmt.Errorf("%w: %s", ErrScanNotFound, req.ID)
+	}
+
+	now := time.Now().UTC()
+	if existing == nil {
+		rec := models.ScanRecord{
+			ScanSummary: models.ScanSummary{
+				ID:         norm.ID,
+				Tag:        norm.Tag,
+				ComputerID: norm.ComputerID,
+				Hostname:   norm.Hostname,
+				DriveID:    norm.DriveID,
+				RootPath:   norm.RootPath,
+				HashAlgo:   norm.HashAlgo,
+				Status:     models.ScanStatusInProgress,
+				Version:    1,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		}
+		existing = &rec
+	} else {
+		if !req.Resume && req.BatchIndex == 0 {
+			if existing.Status != models.ScanStatusInProgress {
+				m.baselines[existing.ID] = memoryBaseline{
+					rootHash: existing.RootHash,
+					version:  existing.Version,
+					entries:  cloneEntries(existing.Entries),
+					history:  cloneHistory(existing.History),
+				}
+			}
+			existing.Entries = nil
+			existing.Status = models.ScanStatusInProgress
+		} else if req.Resume && existing.Status != models.ScanStatusInProgress {
+			if _, hasBase := m.baselines[existing.ID]; !hasBase {
+				m.baselines[existing.ID] = memoryBaseline{
+					rootHash: existing.RootHash,
+					version:  existing.Version,
+					entries:  cloneEntries(existing.Entries),
+					history:  cloneHistory(existing.History),
+				}
+			}
+			existing.Status = models.ScanStatusInProgress
+		}
+
+		if norm.Tag != "" {
+			existing.Tag = norm.Tag
+		}
+		if norm.Hostname != "" && norm.Hostname != "unknown-host" {
+			existing.Hostname = norm.Hostname
+		}
+		if norm.ComputerID != "" && norm.ComputerID != "unknown-host" {
+			existing.ComputerID = norm.ComputerID
+		}
+		if norm.DriveID != "" && norm.DriveID != "default-drive" {
+			existing.DriveID = norm.DriveID
+		}
+		if norm.RootPath != "" {
+			existing.RootPath = norm.RootPath
+		}
+		if req.HashAlgo != "" {
+			existing.HashAlgo = req.HashAlgo
+		}
+		existing.UpdatedAt = now
+	}
+
+	existing.Entries, existing.TotalFiles, existing.TotalDirs, existing.TotalBytes = UpsertScanEntries(existing.Entries, req.Entries)
+
+	if !req.Final {
+		m.scans[existing.ID] = *existing
+		summary := existing.ScanSummary
+		return &summary, nil
+	}
+
+	rootHash := req.RootHash
+	if rootHash == "" || req.Resume {
+		rootHash = models.ComputeRootHash(models.HashAlgorithm(existing.HashAlgo), existing.Entries)
+	}
+	existing.RootHash = rootHash
+
+	var merged models.ScanRecord
+	if base, hasBase := m.baselines[existing.ID]; hasBase {
+		baseRec := *existing
+		baseRec.RootHash = base.rootHash
+		baseRec.Version = base.version
+		baseRec.Entries = base.entries
+		baseRec.History = base.history
+		merged = MergeScanUpdate(&baseRec, *existing)
+		delete(m.baselines, existing.ID)
+	} else {
+		merged = MergeScanUpdate(nil, *existing)
+	}
+	merged.Status = models.ScanStatusCompleted
+	merged.Entries = cloneEntries(merged.Entries)
+	merged.History = cloneHistory(merged.History)
+
+	m.scans[merged.ID] = merged
+	summary := merged.ScanSummary
+	return &summary, nil
+}
+
+func cloneEntries(src []models.ScanEntry) []models.ScanEntry {
+	if src == nil {
+		return nil
+	}
+	dst := make([]models.ScanEntry, len(src))
+	copy(dst, src)
+	return dst
 }
 
 // ListScans returns all stored scan summaries ordered newest update first.

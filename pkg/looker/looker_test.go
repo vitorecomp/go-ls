@@ -241,3 +241,50 @@ func TestWatchDetectsAddedModifiedDeletedFiles(t *testing.T) {
 		t.Fatalf("Watch returned unexpected error: %v", err)
 	}
 }
+
+func TestRunReusesKnownFilesWithoutRehashing(t *testing.T) {
+	tmpDir := t.TempDir()
+	cachedFile := filepath.Join(tmpDir, "cached.txt")
+	freshFile := filepath.Join(tmpDir, "fresh.txt")
+
+	if err := os.WriteFile(cachedFile, []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(freshFile, []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(cachedFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, errLog := collectFiles([]string{tmpDir}, models.LookOptions{
+		Recursive: true,
+		Hash:      true,
+		HashAlgo:  models.HashCRC32,
+		KnownFiles: map[string]models.KnownFileMetadata{
+			cachedFile: {
+				Size:    info.Size(),
+				ModTime: info.ModTime(),
+				Hash:    "reused-hash-from-checkpoint",
+			},
+		},
+	})
+	if errLog != "" {
+		t.Fatalf("unexpected error output: %s", errLog)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(files))
+	}
+
+	got := make(map[string]string, 2)
+	for _, f := range files {
+		got[f.FileInfo.Name()] = f.Hash
+	}
+	if got["cached.txt"] != "reused-hash-from-checkpoint" {
+		t.Errorf("cached.txt hash = %q, want reused-hash-from-checkpoint", got["cached.txt"])
+	}
+	if got["fresh.txt"] != "352441c2" {
+		t.Errorf("fresh.txt hash = %q, want 352441c2", got["fresh.txt"])
+	}
+}

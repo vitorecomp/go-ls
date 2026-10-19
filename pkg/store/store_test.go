@@ -189,3 +189,81 @@ func TestSaveScanUpdatesExistingComputerDirectoryAndTracksHistory(t *testing.T) 
 		t.Errorf("MemoryStore internal history slice was mutated: got %q, want %q", freshHistory[0].Changes[0].RelPath, origRelPath)
 	}
 }
+
+func TestSaveScanBatchIncrementalAndResume(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemoryStore()
+	defer st.Close()
+
+	// 1. Initialize batch 0
+	sum0, err := st.SaveScanBatch(ctx, models.ScanBatchRequest{
+		ID:         "scan-batch-1",
+		ComputerID: "comp-1",
+		Hostname:   "host-1",
+		DriveID:    "drive-1",
+		RootPath:   "/srv/inc",
+		HashAlgo:   "crc32",
+		BatchIndex: 0,
+		Final:      false,
+	})
+	if err != nil {
+		t.Fatalf("SaveScanBatch(0) failed: %v", err)
+	}
+	if sum0.Status != models.ScanStatusInProgress {
+		t.Errorf("expected Status=%q on batch 0, got %q", models.ScanStatusInProgress, sum0.Status)
+	}
+
+	// 2. Upload batch 1 (partial, interrupted before Final)
+	sum1, err := st.SaveScanBatch(ctx, models.ScanBatchRequest{
+		ID:         "scan-batch-1",
+		ComputerID: "comp-1",
+		Hostname:   "host-1",
+		DriveID:    "drive-1",
+		RootPath:   "/srv/inc",
+		HashAlgo:   "crc32",
+		BatchIndex: 1,
+		Final:      false,
+		Entries: []models.ScanEntry{
+			{RelPath: "a.txt", AbsPath: "/srv/inc/a.txt", Name: "a.txt", Size: 10, Hash: "h1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveScanBatch(1) failed: %v", err)
+	}
+	if sum1.TotalFiles != 1 || sum1.Status != models.ScanStatusInProgress {
+		t.Errorf("unexpected sum1 after batch 1: %+v", sum1)
+	}
+
+	// 3. Resume the interrupted scan with remaining entries and Final: true
+	sumFinal, err := st.SaveScanBatch(ctx, models.ScanBatchRequest{
+		ID:         "scan-batch-1",
+		ComputerID: "comp-1",
+		Hostname:   "host-1",
+		DriveID:    "drive-1",
+		RootPath:   "/srv/inc",
+		HashAlgo:   "crc32",
+		BatchIndex: 2,
+		Final:      true,
+		Resume:     true,
+		Entries: []models.ScanEntry{
+			{RelPath: "b.txt", AbsPath: "/srv/inc/b.txt", Name: "b.txt", Size: 20, Hash: "h2"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveScanBatch(2, resume+final) failed: %v", err)
+	}
+	if sumFinal.Status != models.ScanStatusCompleted || sumFinal.TotalFiles != 2 || sumFinal.TotalBytes != 30 || sumFinal.Version != 1 {
+		t.Errorf("unexpected finalized summary: %+v", sumFinal)
+	}
+	if sumFinal.RootHash == "" {
+		t.Errorf("expected non-empty RootHash after final batch")
+	}
+
+	rec, err := st.GetScan(ctx, "scan-batch-1")
+	if err != nil {
+		t.Fatalf("GetScan failed: %v", err)
+	}
+	if len(rec.Entries) != 2 || len(rec.History) != 1 {
+		t.Errorf("expected 2 entries and 1 history revision, got entries=%d history=%d", len(rec.Entries), len(rec.History))
+	}
+}

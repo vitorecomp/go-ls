@@ -51,14 +51,15 @@ If every scan of `/srv/data` on `workstation-01` created an unrelated top-level 
 
 ---
 
-## 4. Deadlock-Free Bounded Concurrency (`pkg/looker`)
+## 4. Deadlock-Free Bounded Concurrency & Incremental Resumable Batches (`pkg/looker`, `pkg/cli`, `pkg/store`)
 
 ### Problem
-Recursive directory traversal where parent goroutines wait on child goroutines (`childWg.Wait()`) will deadlock if a parent holds a concurrency semaphore token while spawning and waiting for children that also need a token from the same semaphore.
+Recursive directory traversal where parent goroutines wait on child goroutines (`childWg.Wait()`) will deadlock if a parent holds a concurrency semaphore token while spawning and waiting for children that also need a token from the same semaphore. Furthermore, waiting for an entire multi-terabyte directory tree to finish scanning before sending a single monolithic payload to the server loses progress if the scan is interrupted.
 
 ### Design
 - In `pkg/looker/looker.go`, the worker semaphore (`sem chan struct{}`) is acquired **strictly** around leaf I/O operations (`withSemaphore` wrapping `os.ReadDir` and `f.ComputeHash`), and released immediately before recursing into subdirectories or sending on output channels.
-- This guarantees bounded file descriptor and CPU usage (`--workers`) with zero possibility of recursive semaphore starvation.
+- Regular files and subdirectories are streamed to `out` immediately as soon as their hash is computed, allowing `pkg/cli` to print the `Scan ID` on the very first line and upload discovered entries incrementally in batches (`POST /api/v1/scans/batch`, `--batch-size=250`).
+- When resuming an interrupted scan (`--resume=<scan-id>`), `pkg/cli` fetches already-uploaded entries from the server (or local checkpoint) and populates `LookOptions.KnownFiles`, allowing `pkg/looker` to skip re-reading and re-hashing unchanged files while still computing accurate parent folder Merkle hashes.
 
 ---
 

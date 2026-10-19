@@ -114,6 +114,7 @@ type ScanSummary struct {
 	RootPath   string    `json:"root_path"`
 	HashAlgo   string    `json:"hash_algo"`
 	RootHash   string    `json:"root_hash"`
+	Status     string    `json:"status,omitempty"`
 	TotalFiles int       `json:"total_files"`
 	TotalDirs  int       `json:"total_dirs"`
 	TotalBytes int64     `json:"total_bytes"`

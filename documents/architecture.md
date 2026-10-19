@@ -119,7 +119,8 @@ flowchart TD
 | `GET` | `/` | Serves the compiled Next.js static frontend (`web/out` or `/usr/local/share/go-ls/web`). |
 | `GET` | `/healthz` | Healthcheck endpoint returning `{"status":"ok"}`. |
 | `GET` | `/api/v1/computers` | Lists all tracked computers (`[]models.Computer`), their drive IDs, and their directory snapshots. |
-| `POST` | `/api/v1/scans` | Creates or updates a directory snapshot under its `(computer_id, drive_id, root_path)`, records the revision diff in its history, and returns `201 Created` with `models.ScanSummary`. |
+| `POST` | `/api/v1/scans` | Creates or updates a full directory snapshot under its `(computer_id, drive_id, root_path)`, records the revision diff in its history, and returns `201 Created` with `models.ScanSummary`. |
+| `POST` | `/api/v1/scans/batch` | Appends or upserts an incremental batch of scan entries (`models.ScanBatchRequest`), finalizing the Merkle root hash and revision history when `final: true`. |
 | `GET` | `/api/v1/scans` | Lists all active directory snapshots (`[]models.ScanSummary`) ordered newest update first. |
 | `GET` | `/api/v1/scans/{id}` | Retrieves a full `models.ScanRecord` (summary + current entries + change history) by ID. |
 | `GET` | `/api/v1/scans/{id}/history` | Retrieves the revision and diff history (`[]models.ScanHistoryEntry`) for a tracked directory. |

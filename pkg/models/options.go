@@ -1,6 +1,8 @@
 // Package models defines the core domain types and configuration options for go-ls.
 package models
 
+import "time"
+
 // DefaultDateFormat is the timestamp layout used in long (-l) console output.
 const DefaultDateFormat = "Jan _2 15:04"
 
@@ -44,6 +46,14 @@ type ProgressSnapshot struct {
 // ProgressFunc receives live progress snapshots during directory traversal.
 type ProgressFunc func(ProgressSnapshot)
 
+// KnownFileMetadata holds previously recorded metadata and checksum for a file
+// so resumed scans can skip re-hashing unchanged files.
+type KnownFileMetadata struct {
+	Size    int64
+	ModTime time.Time
+	Hash    string
+}
+
 // LookOptions configures how the directory walker discovers and processes files.
 type LookOptions struct {
 	Recursive  bool
@@ -53,6 +63,7 @@ type LookOptions struct {
 	Workers    int
 	Live       bool
 	OnProgress ProgressFunc
+	KnownFiles map[string]KnownFileMetadata
 }
 
 // LookParameters is an alias for LookOptions kept for backwards compatibility.

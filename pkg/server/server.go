@@ -68,6 +68,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/computers", s.handleListComputers)
 	s.mux.HandleFunc("POST /api/v1/scans", s.handleCreateScan)
+	s.mux.HandleFunc("POST /api/v1/scans/batch", s.handleSaveScanBatch)
+	s.mux.HandleFunc("POST /api/v1/scans/{id}/batch", s.handleSaveScanBatch)
 	s.mux.HandleFunc("GET /api/v1/scans", s.handleListScans)
 	s.mux.HandleFunc("GET /api/v1/scans/{id}", s.handleGetScan)
 	s.mux.HandleFunc("GET /api/v1/scans/{id}/history", s.handleGetScanHistory)
@@ -178,6 +180,29 @@ func (s *Server) handleCreateScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, summary)
+}
+
+func (s *Server) handleSaveScanBatch(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxScanPayloadBytes)
+	var payload models.ScanBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON payload: "+err.Error())
+		return
+	}
+	if pathID := strings.TrimSpace(r.PathValue("id")); pathID != "" && strings.TrimSpace(payload.ID) == "" {
+		payload.ID = pathID
+	}
+
+	summary, err := s.store.SaveScanBatch(r.Context(), payload)
+	if err != nil {
+		if errors.Is(err, store.ErrScanNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
 func (s *Server) handleListComputers(w http.ResponseWriter, r *http.Request) {

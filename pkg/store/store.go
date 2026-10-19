@@ -3,11 +3,10 @@
 package store
 
 import (
+	"cmp"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -21,6 +20,7 @@ var ErrScanNotFound = errors.New("scan not found")
 // Store defines the persistence contract for storing, comparing, and analyzing directory scans.
 type Store interface {
 	SaveScan(ctx context.Context, scan models.ScanRecord) (*models.ScanSummary, error)
+	SaveScanBatch(ctx context.Context, req models.ScanBatchRequest) (*models.ScanSummary, error)
 	ListScans(ctx context.Context) ([]models.ScanSummary, error)
 	ListComputers(ctx context.Context) ([]models.Computer, error)
 	GetScan(ctx context.Context, scanID string) (*models.ScanRecord, error)
@@ -73,6 +73,9 @@ func NormalizeScan(scan models.ScanRecord) models.ScanRecord {
 	if scan.HashAlgo == "" {
 		scan.HashAlgo = string(models.HashCRC32)
 	}
+	if scan.Status == "" {
+		scan.Status = models.ScanStatusCompleted
+	}
 
 	var files, dirs int
 	var totalBytes int64
@@ -88,6 +91,59 @@ func NormalizeScan(scan models.ScanRecord) models.ScanRecord {
 	scan.TotalDirs = dirs
 	scan.TotalBytes = totalBytes
 	return scan
+}
+
+// NormalizeScanBatch populates default fields on a ScanBatchRequest.
+func NormalizeScanBatch(req models.ScanBatchRequest) models.ScanBatchRequest {
+	if strings.TrimSpace(req.ID) == "" {
+		req.ID = generateScanID()
+	}
+	if strings.TrimSpace(req.Hostname) == "" {
+		if strings.TrimSpace(req.ComputerID) != "" {
+			req.Hostname = req.ComputerID
+		} else {
+			req.Hostname = "unknown-host"
+		}
+	}
+	if strings.TrimSpace(req.ComputerID) == "" {
+		req.ComputerID = req.Hostname
+	}
+	if strings.TrimSpace(req.DriveID) == "" {
+		req.DriveID = "default-drive"
+	}
+	if req.HashAlgo == "" {
+		req.HashAlgo = string(models.HashCRC32)
+	}
+	return req
+}
+
+// UpsertScanEntries merges incoming batch entries into existing entries by RelPath,
+// returning the sorted slice and recalculated (totalFiles, totalDirs, totalBytes).
+func UpsertScanEntries(existing []models.ScanEntry, incoming []models.ScanEntry) ([]models.ScanEntry, int, int, int64) {
+	byPath := make(map[string]models.ScanEntry, len(existing)+len(incoming))
+	for _, e := range existing {
+		byPath[e.RelPath] = e
+	}
+	for _, e := range incoming {
+		byPath[e.RelPath] = e
+	}
+
+	merged := make([]models.ScanEntry, 0, len(byPath))
+	var files, dirs int
+	var totalBytes int64
+	for _, e := range byPath {
+		merged = append(merged, e)
+		if e.IsDir {
+			dirs++
+		} else {
+			files++
+			totalBytes += e.Size
+		}
+	}
+	slices.SortFunc(merged, func(a, b models.ScanEntry) int {
+		return cmp.Compare(a.RelPath, b.RelPath)
+	})
+	return merged, files, dirs, totalBytes
 }
 
 // MergeScanUpdate combines an incoming ScanRecord with an optional existing ScanRecord
@@ -234,11 +290,7 @@ func GroupScansByComputer(summaries []models.ScanSummary) []models.Computer {
 }
 
 func generateScanID() string {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("scan-%d", time.Now().UnixNano())
-	}
-	return fmt.Sprintf("scan-%s-%s", time.Now().UTC().Format("20060102-150405"), hex.EncodeToString(b))
+	return models.GenerateScanID()
 }
 
 // ComputeDiff compares two ScanRecords by relative path and reports added, deleted,

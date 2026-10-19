@@ -69,6 +69,26 @@ func (c *Client) UploadScan(ctx context.Context, scan models.ScanRecord) (*model
 	return &summary, nil
 }
 
+// UploadScanBatch sends an incremental batch of scan entries to the server and returns the updated ScanSummary.
+func (c *Client) UploadScanBatch(ctx context.Context, batch models.ScanBatchRequest) (*models.ScanSummary, error) {
+	body, err := json.Marshal(batch)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling scan batch: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/scans/batch", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	var summary models.ScanSummary
+	if err := c.doJSON(req, http.StatusOK, &summary); err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
 // ListComputers retrieves all tracked computers and their directory snapshots from the server.
 func (c *Client) ListComputers(ctx context.Context) ([]models.Computer, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/computers", nil)

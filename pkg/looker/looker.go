@@ -2,6 +2,7 @@
 package looker
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -113,6 +114,23 @@ func itemByteSize(f models.File) int64 {
 	return f.FileInfo.Size()
 }
 
+func lookupKnownFileHash(opts models.LookOptions, absPath string, f models.File) (string, bool) {
+	if len(opts.KnownFiles) == 0 || f.FileInfo == nil || f.Dir {
+		return "", false
+	}
+	known, ok := opts.KnownFiles[absPath]
+	if !ok || known.Hash == "" {
+		return "", false
+	}
+	if known.Size != f.FileInfo.Size() {
+		return "", false
+	}
+	if !known.ModTime.IsZero() && !f.FileInfo.ModTime().UTC().Truncate(time.Millisecond).Equal(known.ModTime.UTC().Truncate(time.Millisecond)) {
+		return "", false
+	}
+	return known.Hash, true
+}
+
 type syncWriter struct {
 	mu sync.Mutex
 	w  io.Writer
@@ -137,12 +155,24 @@ func (s *syncWriter) Write(p []byte) (int, error) {
 // Run traverses all provided paths (files or directories) concurrently according to opts,
 // streaming discovered models.File entries to out and closing out when traversal finishes.
 func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut io.Writer) {
+	RunWithContext(context.Background(), paths, opts, out, errOut)
+}
+
+// RunWithContext traverses all provided paths concurrently until traversal finishes or ctx is canceled,
+// streaming discovered models.File entries to out and closing out when done.
+func RunWithContext(ctx context.Context, paths []string, opts models.LookOptions, out chan<- models.File, errOut io.Writer) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	errOut = newSyncWriter(errOut)
 	sem := newSemaphore(opts.Workers)
 	tracker := newProgressTracker(opts.OnProgress)
 
 	var wg sync.WaitGroup
 	for _, rawPath := range paths {
+		if ctx.Err() != nil {
+			break
+		}
 		absPath, err := filepath.Abs(rawPath)
 		if err != nil {
 			fmt.Fprintf(errOut, "go-ls: cannot resolve path %q: %v\n", rawPath, err)
@@ -159,11 +189,15 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 			tracker.addDiscovered(1, absPath)
 			f := models.NewFile(filepath.Dir(absPath), info)
 			if opts.Hash {
-				withSemaphore(sem, func() {
-					if err := f.ComputeHash(opts.HashAlgo); err != nil {
-						fmt.Fprintf(errOut, "go-ls: %v\n", err)
-					}
-				})
+				if h, ok := lookupKnownFileHash(opts, absPath, f); ok {
+					f.Hash = h
+				} else {
+					withSemaphore(sem, func() {
+						if err := f.ComputeHash(opts.HashAlgo); err != nil {
+							fmt.Fprintf(errOut, "go-ls: %v\n", err)
+						}
+					})
+				}
 			}
 			tracker.addCompleted(itemByteSize(f), absPath)
 			out <- f
@@ -173,7 +207,7 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 		wg.Add(1)
 		go func(dirPath string) {
 			defer wg.Done()
-			walkDir(sem, dirPath, opts, true, out, errOut, tracker)
+			walkDir(ctx, sem, dirPath, opts, true, out, errOut, tracker)
 		}(absPath)
 	}
 
@@ -188,13 +222,14 @@ func Look(wg *sync.WaitGroup, path string, parameters models.LookParameters, cha
 	defer wg.Done()
 	sem := newSemaphore(parameters.Workers)
 	tracker := newProgressTracker(parameters.OnProgress)
-	walkDir(sem, path, parameters, true, channel, newSyncWriter(os.Stderr), tracker)
+	walkDir(context.Background(), sem, path, parameters, true, channel, newSyncWriter(os.Stderr), tracker)
 	tracker.finish()
 }
 
 // walkDir scans dirPath, optionally emits discovered entries to out, and returns the
 // combined directory hash when opts.Hash is enabled.
 func walkDir(
+	ctx context.Context,
 	sem chan struct{},
 	dirPath string,
 	opts models.LookOptions,
@@ -203,6 +238,9 @@ func walkDir(
 	errOut io.Writer,
 	tracker *progressTracker,
 ) string {
+	if ctx.Err() != nil {
+		return ""
+	}
 	tracker.addDir(dirPath)
 
 	var entries []os.DirEntry
@@ -232,17 +270,23 @@ func walkDir(
 		var subWg sync.WaitGroup
 		if opts.Recursive {
 			for i := range items {
+				if ctx.Err() != nil {
+					break
+				}
 				if items[i].Dir {
 					subPath := items[i].GetAbsolutePath()
 					subWg.Add(1)
 					go func(p string) {
 						defer subWg.Done()
-						walkDir(sem, p, opts, true, out, errOut, tracker)
+						walkDir(ctx, sem, p, opts, true, out, errOut, tracker)
 					}(subPath)
 				}
 			}
 		}
 		for _, item := range items {
+			if ctx.Err() != nil {
+				break
+			}
 			tracker.addCompleted(itemByteSize(item), item.GetAbsolutePath())
 			if emit {
 				out <- item
@@ -253,34 +297,57 @@ func walkDir(
 	}
 
 	// Hashing path: compute file hashes and subdirectory Merkle hashes concurrently,
-	// preserving os.ReadDir's deterministic sorted order when combining child hashes.
+	// streaming each item to out as soon as its hash is ready while preserving
+	// os.ReadDir's deterministic sorted order when combining child hashes.
 	var childWg sync.WaitGroup
 	for i := range items {
 		childWg.Add(1)
 		go func(idx int) {
 			defer childWg.Done()
-			absItemPath := items[idx].GetAbsolutePath()
-			if items[idx].Dir {
-				items[idx].Hash = walkDir(sem, absItemPath, opts, emit && opts.Recursive, out, errOut, tracker)
-				tracker.addCompleted(0, absItemPath)
+			if ctx.Err() != nil {
 				return
 			}
-			withSemaphore(sem, func() {
-				if err := items[idx].ComputeHash(opts.HashAlgo); err != nil {
-					fmt.Fprintf(errOut, "go-ls: %v\n", err)
+			absItemPath := items[idx].GetAbsolutePath()
+			if items[idx].Dir {
+				items[idx].Hash = walkDir(ctx, sem, absItemPath, opts, emit && opts.Recursive, out, errOut, tracker)
+				if ctx.Err() != nil {
+					return
 				}
-			})
+				tracker.addCompleted(0, absItemPath)
+				if emit {
+					out <- items[idx]
+				}
+				return
+			}
+			if h, ok := lookupKnownFileHash(opts, absItemPath, items[idx]); ok {
+				items[idx].Hash = h
+			} else {
+				withSemaphore(sem, func() {
+					if ctx.Err() != nil {
+						return
+					}
+					if err := items[idx].ComputeHash(opts.HashAlgo); err != nil {
+						fmt.Fprintf(errOut, "go-ls: %v\n", err)
+					}
+				})
+			}
+			if ctx.Err() != nil {
+				return
+			}
 			tracker.addCompleted(itemByteSize(items[idx]), absItemPath)
+			if emit {
+				out <- items[idx]
+			}
 		}(i)
 	}
 	childWg.Wait()
 
+	if ctx.Err() != nil {
+		return ""
+	}
 	childHashes := make([]string, 0, len(items))
 	for _, item := range items {
 		childHashes = append(childHashes, item.Hash)
-		if emit {
-			out <- item
-		}
 	}
 
 	var dirHolder models.File

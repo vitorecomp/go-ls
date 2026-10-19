@@ -308,3 +308,93 @@ func TestScansDiffAndDuplicatesCmdRun(t *testing.T) {
 		t.Fatalf("DuplicatesCmd.Run (scan-b) failed: %v", err)
 	}
 }
+
+func TestScanCmdIncrementalBatchesPrintIDFirstAndResume(t *testing.T) {
+	memStore := store.NewMemoryStore()
+	srv := httptest.NewServer(server.New(memStore))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	for _, name := range []string{"f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("content-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. Run an incremental scan with BatchSize=2 and custom ScanID="inc-scan-1"
+	cmd1 := ScanCmd{
+		Recursive:  true,
+		NoProgress: true,
+		Color:      "never",
+		ServerURL:  srv.URL,
+		ScanID:     "inc-scan-1",
+		BatchSize:  2,
+		Paths:      []string{tmpDir},
+	}
+
+	var out1, err1 syncBuffer
+	if err := cmd1.RunWithContext(context.Background(), &out1, &err1); err != nil {
+		t.Fatalf("cmd1.RunWithContext failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out1.String()), "\n")
+	if len(lines) == 0 || lines[0] != "Scan ID: inc-scan-1" {
+		t.Fatalf("expected very first output line to be 'Scan ID: inc-scan-1', got %q", out1.String())
+	}
+
+	stored, err := memStore.GetScan(context.Background(), "inc-scan-1")
+	if err != nil {
+		t.Fatalf("GetScan(inc-scan-1) failed: %v", err)
+	}
+	if len(stored.Entries) != 5 || stored.Status != models.ScanStatusCompleted {
+		t.Fatalf("expected 5 completed entries on server, got len=%d status=%q", len(stored.Entries), stored.Status)
+	}
+
+	// 2. Simulate an interrupted scan on the server (only 2 of the 5 files uploaded so far),
+	// plus add a 6th file f6.txt on disk, then resume with --resume=inc-scan-partial.
+	_, err = memStore.SaveScanBatch(context.Background(), models.ScanBatchRequest{
+		ID:         "inc-scan-partial",
+		ComputerID: "comp-test",
+		Hostname:   "host-test",
+		DriveID:    "drive-test",
+		RootPath:   tmpDir,
+		HashAlgo:   "crc32",
+		BatchIndex: 1,
+		Final:      false,
+		Entries:    stored.Entries[:2],
+	})
+	if err != nil {
+		t.Fatalf("SaveScanBatch(inc-scan-partial) failed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "f6.txt"), []byte("content-f6.txt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resumeCmd := ScanCmd{
+		NoProgress: true,
+		Color:      "never",
+		ServerURL:  srv.URL,
+		Resume:     "inc-scan-partial",
+		BatchSize:  2,
+		Quiet:      true,
+	}
+
+	var out2, err2 syncBuffer
+	if err := resumeCmd.RunWithContext(context.Background(), &out2, &err2); err != nil {
+		t.Fatalf("resumeCmd.RunWithContext failed: %v", err)
+	}
+
+	resumeLines := strings.Split(strings.TrimSpace(out2.String()), "\n")
+	if len(resumeLines) == 0 || resumeLines[0] != "Scan ID: inc-scan-partial" {
+		t.Fatalf("expected very first output line on resume to be 'Scan ID: inc-scan-partial', got %q", out2.String())
+	}
+
+	resumedScan, err := memStore.GetScan(context.Background(), "inc-scan-partial")
+	if err != nil {
+		t.Fatalf("GetScan(inc-scan-partial) after resume failed: %v", err)
+	}
+	if resumedScan.Status != models.ScanStatusCompleted || len(resumedScan.Entries) != 6 {
+		t.Fatalf("expected 6 completed entries after resume, got len=%d status=%q", len(resumedScan.Entries), resumedScan.Status)
+	}
+}

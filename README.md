@@ -161,7 +161,7 @@ go build -o go-ls-client ./cmd/client
 
 | Subcommand | Description |
 | :--- | :--- |
-| `go-ls [scan] [<path>...]` | *(Default)* Scan local files/directories, compute file & folder hashes, and optionally upload to `--server`. |
+| `go-ls [scan] [<path>...]` | *(Default)* Scan local files/directories, print the resumable `Scan ID` first, compute file & folder hashes, and stream entries in incremental batches (`--batch-size`, `--resume=<id>`) to `--server`. |
 | `go-ls scans [<scan-id>]` | List all scans stored on the server, or inspect entries of `<scan-id>`. |
 | `go-ls diff <base> <target>` | Compare two stored scans on the server and report added, deleted, and modified entries. |
 | `go-ls duplicates [<scan-id>]` | Find duplicate files by hash and size within `<scan-id>` or across all stored scans. |
