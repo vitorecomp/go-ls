@@ -166,6 +166,7 @@ go build -o go-ls-client ./cmd/client
 | `go-ls diff <base> <target>` | Compare two stored scans on the server and report added, deleted, and modified entries. |
 | `go-ls duplicates [<scan-id>]` | Find duplicate files by hash and size within `<scan-id>` or across all stored scans. |
 | `go-ls serve` | Start the `go-ls` HTTP REST API & Next.js UI server (`--listen=:8080`, `--db-url=...`, `--ui-dir=./web/out`, `--dev`, `--ui-proxy=...`). |
+| `go-ls --version` / `-v` / `version` | Print the `go-ls` version (`go-ls v0.2.0`) and exit. |
 
 ---
 

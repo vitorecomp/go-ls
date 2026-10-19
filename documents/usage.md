@@ -190,9 +190,9 @@ go run . -R --hash --json ./pkg
 
 ### Global Flag
 
-| Flag | Default | Description |
-| :--- | :--- | :--- |
-| `--version` | `false` | Output version information and exit. |
+| Flag | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--version` | `-v` | `false` | Output version information and exit (also available as `go-ls version`). |
 
 ### `go-ls [scan] [<path>...]` Flags
 

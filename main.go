@@ -12,17 +12,16 @@ import (
 
 func main() {
 	rawArgs := os.Args[1:]
-	for _, a := range rawArgs {
-		if a == "--version" {
-			fmt.Printf("go-ls v%s\n", cli.Version)
-			return
-		}
+	if cli.HasVersionFlag(rawArgs) {
+		fmt.Printf("go-ls v%s\n", cli.Version)
+		return
 	}
 
 	var app cli.CLI
 	parser, err := kong.New(&app,
 		kong.Name("go-ls"),
 		kong.Description("Client-server directory listing, hashing, comparison, and backup verification tool."),
+		kong.Vars{"version": fmt.Sprintf("go-ls v%s", cli.Version)},
 		kong.UsageOnError(),
 	)
 	if err != nil {

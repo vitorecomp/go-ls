@@ -234,6 +234,12 @@ func (s *ServeCmd) Run() error {
 	}
 }
 
+// Run prints the version string to stdout.
+func (v *VersionCmd) Run() error {
+	fmt.Printf("go-ls v%s\n", Version)
+	return nil
+}
+
 func redactDBURL(dbURL string) string {
 	if dbURL == "" || dbURL == "memory://" || dbURL == "memory" {
 		return "memory://"

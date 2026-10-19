@@ -106,6 +106,21 @@ func TestParseDiffAndServeSubcommands(t *testing.T) {
 	if !shouldReloadGoFile("pkg/server/server.go") || shouldReloadGoFile("pkg/server/server_test.go") {
 		t.Errorf("unexpected shouldReloadGoFile behavior")
 	}
+
+	if !HasVersionFlag([]string{"--version"}) || !HasVersionFlag([]string{"-v"}) || HasVersionFlag([]string{"--", "--version"}) {
+		t.Errorf("unexpected HasVersionFlag behavior")
+	}
+
+	ctx, err = parser.Parse(NormalizeArgs([]string{"version"}))
+	if err != nil {
+		t.Fatalf("parser.Parse(version) failed: %v", err)
+	}
+	if ctx.Command() != "version" {
+		t.Errorf("unexpected version command: %q", ctx.Command())
+	}
+	if err := parsed.VersionCmd.Run(); err != nil {
+		t.Errorf("VersionCmd.Run() failed: %v", err)
+	}
 }
 
 func TestParseLiveFlagEnablesLiveAndHash(t *testing.T) {
