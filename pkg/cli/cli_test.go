@@ -323,13 +323,12 @@ func TestScanCmdIncrementalBatchesPrintIDFirstAndResume(t *testing.T) {
 
 	// 1. Run an incremental scan with BatchSize=2 and custom ScanID="inc-scan-1"
 	cmd1 := ScanCmd{
-		Recursive:  true,
-		NoProgress: true,
-		Color:      "never",
-		ServerURL:  srv.URL,
-		ScanID:     "inc-scan-1",
-		BatchSize:  2,
-		Paths:      []string{tmpDir},
+		ScanMode:  true,
+		Color:     "never",
+		ServerURL: srv.URL,
+		ScanID:    "inc-scan-1",
+		BatchSize: 2,
+		Paths:     []string{tmpDir},
 	}
 
 	var out1, err1 syncBuffer
@@ -340,6 +339,14 @@ func TestScanCmdIncrementalBatchesPrintIDFirstAndResume(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out1.String()), "\n")
 	if len(lines) == 0 || lines[0] != "Scan ID: inc-scan-1" {
 		t.Fatalf("expected very first output line to be 'Scan ID: inc-scan-1', got %q", out1.String())
+	}
+	for _, name := range []string{"f1.txt", "f2.txt", "f3.txt", "f4.txt", "f5.txt"} {
+		if strings.Contains(out1.String(), name) {
+			t.Errorf("expected scan mode not to list file %q on stdout, got %q", name, out1.String())
+		}
+	}
+	if !strings.Contains(err1.String(), "working on folder:") {
+		t.Errorf("expected progress bar working on folder status on stderr, got %q", err1.String())
 	}
 
 	stored, err := memStore.GetScan(context.Background(), "inc-scan-1")

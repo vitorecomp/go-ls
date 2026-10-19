@@ -195,11 +195,11 @@ func TestProgressBarRenderAndStdoutCoordination(t *testing.T) {
 	wrappedOut := pb.WrapStdout(&outBuf)
 
 	pb.Update(models.ProgressSnapshot{
-		Discovered: 10,
-		Completed:  5,
+		Discovered: 20003,
+		Completed:  10,
 		Dirs:       2,
 		Bytes:      2048,
-		Current:    "/tmp/sample/file.go",
+		Current:    "/mnt/ajlkjas/xpto",
 	})
 
 	if _, err := wrappedOut.Write([]byte("file.go\n")); err != nil {
@@ -207,16 +207,20 @@ func TestProgressBarRenderAndStdoutCoordination(t *testing.T) {
 	}
 
 	pb.Update(models.ProgressSnapshot{
-		Discovered: 10,
-		Completed:  10,
+		Discovered: 20003,
+		Completed:  20003,
 		Dirs:       2,
 		Bytes:      4096,
+		Current:    "/mnt/ajlkjas/xpto",
 		Done:       true,
 	})
 	pb.Finish()
 
 	errText := errBuf.String()
-	if !strings.Contains(errText, "100% | 10/10 items | 2 dirs | 4.0 KB") {
+	if !strings.Contains(errText, "10/20003 working on folder: mnt/ajlkjas/xpto") {
+		t.Errorf("expected working folder line in stderr output, got %q", errText)
+	}
+	if !strings.Contains(errText, "100% | 20003/20003 items | 2 dirs | 4.0 KB") {
 		t.Errorf("expected completed 100%% progress bar in stderr output, got %q", errText)
 	}
 	if outBuf.String() != "file.go\n" {

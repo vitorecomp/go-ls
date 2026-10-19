@@ -37,6 +37,35 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 	outputOpts := s.ToOutputOptions()
 
 	isResume := strings.TrimSpace(s.Resume) != ""
+	isScanOption := s.ScanMode || strings.TrimSpace(s.ServerURL) != "" || isResume || strings.TrimSpace(s.ScanID) != ""
+
+	paths := append([]string(nil), s.Paths...)
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+
+	// Pure local listing mode (e.g. `go-ls -la` or `go-ls -R` without `scan` / `--scan` / `--server` / `--resume`).
+	if !isScanOption && !s.Live {
+		var progressBar *output.ProgressBar
+		lookErrOut := errOut
+		displayOut := out
+		if lookOpts.Recursive && !s.NoProgress {
+			progressBar = output.NewProgressBar(errOut, outputOpts.NoColor)
+			lookOpts.OnProgress = progressBar.Update
+			lookErrOut = progressBar.WrapStderr(errOut)
+			displayOut = progressBar.WrapStdout(out)
+		}
+
+		rawChan := make(models.OutputChan, defaultChannelBuffer)
+		go looker.RunWithContext(ctx, paths, lookOpts, rawChan, lookErrOut)
+
+		output.WriteOutput(displayOut, rawChan, outputOpts)
+		if progressBar != nil {
+			progressBar.Finish()
+		}
+		return nil
+	}
+
 	scanID := strings.TrimSpace(s.ScanID)
 	if isResume {
 		scanID = strings.TrimSpace(s.Resume)
@@ -46,39 +75,43 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 	}
 
 	serverURL := strings.TrimSpace(s.ServerURL)
-	paths := append([]string(nil), s.Paths...)
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
 	tag := s.Tag
 
 	knownServerEntries := make(map[string]models.ScanEntry)
 	lookOpts.KnownFiles = make(map[string]models.KnownFileMetadata)
 
+	userSpecifiedPath := len(s.Paths) > 1 || (len(s.Paths) == 1 && s.Paths[0] != "" && s.Paths[0] != ".")
+
 	var localCP *localScanCheckpoint
 	if isResume {
 		if cp, err := loadLocalCheckpoint(scanID); err == nil && cp != nil {
-			localCP = cp
-			if serverURL == "" && cp.ServerURL != "" {
-				serverURL = cp.ServerURL
+			if cp.RootPath == "" {
+				localCP = cp
+			} else if _, statErr := os.Stat(cp.RootPath); statErr == nil {
+				localCP = cp
 			}
-			if len(paths) == 1 && paths[0] == "." && cp.RootPath != "" {
-				paths = []string{cp.RootPath}
+		}
+		if localCP != nil {
+			if serverURL == "" && localCP.ServerURL != "" {
+				serverURL = localCP.ServerURL
 			}
-			if !s.Recursive && cp.Recursive {
+			if !userSpecifiedPath && localCP.RootPath != "" {
+				paths = []string{localCP.RootPath}
+			}
+			if !s.Recursive && localCP.Recursive {
 				lookOpts.Recursive = true
 			}
-			if !s.ShowHidden && cp.ShowHidden {
+			if !s.ShowHidden && localCP.ShowHidden {
 				lookOpts.ShowHidden = true
 				outputOpts.ShowHidden = true
 			}
-			if cp.HashAlgo != "" {
-				lookOpts.HashAlgo = models.HashAlgorithm(cp.HashAlgo)
+			if localCP.HashAlgo != "" {
+				lookOpts.HashAlgo = models.HashAlgorithm(localCP.HashAlgo)
 			}
-			if tag == "" && cp.Tag != "" {
-				tag = cp.Tag
+			if tag == "" && localCP.Tag != "" {
+				tag = localCP.Tag
 			}
-			for _, e := range cp.Entries {
+			for _, e := range localCP.Entries {
 				if e.AbsPath != "" && e.Hash != "" && !e.IsDir {
 					lookOpts.KnownFiles[e.AbsPath] = models.KnownFileMetadata{
 						Size:    e.Size,
@@ -93,6 +126,14 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 	}
 
 	var apiClient *client.Client
+	if serverURL == "" && s.ScanMode {
+		probeClient := client.New(DefaultServerURL)
+		probeCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		if err := probeClient.Health(probeCtx); err == nil {
+			serverURL = DefaultServerURL
+		}
+		cancel()
+	}
 	if serverURL != "" {
 		apiClient = client.New(serverURL)
 		lookOpts.Hash = true
@@ -107,7 +148,7 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 			}
 		} else if remoteScan != nil {
 			scanID = remoteScan.ID
-			if len(paths) == 1 && paths[0] == "." && remoteScan.RootPath != "" {
+			if !userSpecifiedPath && remoteScan.RootPath != "" {
 				paths = []string{remoteScan.RootPath}
 			}
 			if remoteScan.HashAlgo != "" {
@@ -116,6 +157,7 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 			if tag == "" && remoteScan.Tag != "" {
 				tag = remoteScan.Tag
 			}
+			lookOpts.KnownFiles = make(map[string]models.KnownFileMetadata, len(remoteScan.Entries))
 			for _, e := range remoteScan.Entries {
 				knownServerEntries[e.RelPath] = e
 				if e.IsDir || strings.Contains(e.RelPath, "/") {
@@ -161,6 +203,7 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 
 	// Initialize the scan session on the server before walking the directory so the
 	// canonical scan ID is resolved and ready for resumption immediately.
+	batchSupported := true
 	if apiClient != nil && !isResume {
 		initSummary, err := apiClient.UploadScanBatch(ctx, models.ScanBatchRequest{
 			ID:         scanID,
@@ -175,9 +218,14 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 			Resume:     false,
 		})
 		if err != nil {
-			return fmt.Errorf("initializing scan on %s: %w", serverURL, err)
-		}
-		if initSummary != nil && initSummary.ID != "" {
+			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "405") {
+				batchSupported = false
+			} else if strings.TrimSpace(s.ServerURL) == "" {
+				apiClient = nil
+			} else {
+				return fmt.Errorf("initializing scan on %s: %w", serverURL, err)
+			}
+		} else if initSummary != nil && initSummary.ID != "" {
 			scanID = initSummary.ID
 		}
 	}
@@ -214,7 +262,7 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 	var progressBar *output.ProgressBar
 	lookErrOut := errOut
 	displayOut := out
-	if lookOpts.Recursive && !s.NoProgress {
+	if (lookOpts.Recursive || isScanOption) && !s.NoProgress {
 		progressBar = output.NewProgressBar(errOut, outputOpts.NoColor)
 		lookOpts.OnProgress = progressBar.Update
 		lookErrOut = progressBar.WrapStderr(errOut)
@@ -231,7 +279,9 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 		displayChan  chan models.File
 		displayDone  chan struct{}
 	)
-	if !s.Quiet || apiClient == nil {
+	// Do not list individual files on the screen when running the scan option;
+	// only stream files to displayOut in non-scan --live mode (unless --quiet is set).
+	if !isScanOption && !s.Quiet {
 		displayChan = make(chan models.File, defaultChannelBuffer)
 		displayDone = make(chan struct{})
 		go func() {
@@ -249,7 +299,7 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 		}
 		saveLocalCheckpoint(localCP)
 
-		if apiClient == nil {
+		if apiClient == nil || !batchSupported {
 			return nil, nil
 		}
 		batchIndex++
@@ -325,13 +375,26 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 
 	if apiClient != nil {
 		record := models.BuildScanRecord(scanID, tag, hostname, absRoot, lookOpts.HashAlgo, collected)
-		summary, err := flushBatch(ctx, pendingBatch, true, record.RootHash)
+		var (
+			summary *models.ScanSummary
+			err     error
+		)
+		if batchSupported {
+			summary, err = flushBatch(ctx, pendingBatch, true, record.RootHash)
+		} else {
+			_, _ = flushBatch(ctx, pendingBatch, true, record.RootHash)
+			summary, err = apiClient.UploadScan(ctx, record)
+		}
 		if err != nil {
 			return fmt.Errorf("finalizing scan on %s: %w", serverURL, err)
 		}
 		output.WriteScanSummary(out, *summary, s.JSON)
 	} else {
-		_, _ = flushBatch(ctx, pendingBatch, true, "")
+		record := models.BuildScanRecord(scanID, tag, hostname, absRoot, lookOpts.HashAlgo, collected)
+		_, _ = flushBatch(ctx, pendingBatch, true, record.RootHash)
+		if isScanOption {
+			output.WriteScanSummary(out, record.ScanSummary, s.JSON)
+		}
 	}
 
 	if !s.Live {

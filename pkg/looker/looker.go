@@ -165,7 +165,8 @@ func RunWithContext(ctx context.Context, paths []string, opts models.LookOptions
 		ctx = context.Background()
 	}
 	errOut = newSyncWriter(errOut)
-	sem := newSemaphore(opts.Workers)
+	dirSem := newSemaphore(opts.Workers)
+	hashSem := newSemaphore(opts.Workers)
 	tracker := newProgressTracker(opts.OnProgress)
 
 	var wg sync.WaitGroup
@@ -186,20 +187,21 @@ func RunWithContext(ctx context.Context, paths []string, opts models.LookOptions
 		}
 
 		if !info.IsDir() {
-			tracker.addDiscovered(1, absPath)
-			f := models.NewFile(filepath.Dir(absPath), info)
+			parentDir := filepath.Dir(absPath)
+			tracker.addDiscovered(1, parentDir)
+			f := models.NewFile(parentDir, info)
 			if opts.Hash {
 				if h, ok := lookupKnownFileHash(opts, absPath, f); ok {
 					f.Hash = h
 				} else {
-					withSemaphore(sem, func() {
+					withSemaphore(hashSem, func() {
 						if err := f.ComputeHash(opts.HashAlgo); err != nil {
 							fmt.Fprintf(errOut, "go-ls: %v\n", err)
 						}
 					})
 				}
 			}
-			tracker.addCompleted(itemByteSize(f), absPath)
+			tracker.addCompleted(itemByteSize(f), parentDir)
 			out <- f
 			continue
 		}
@@ -207,7 +209,7 @@ func RunWithContext(ctx context.Context, paths []string, opts models.LookOptions
 		wg.Add(1)
 		go func(dirPath string) {
 			defer wg.Done()
-			walkDir(ctx, sem, dirPath, opts, true, out, errOut, tracker)
+			walkDir(ctx, dirSem, hashSem, dirPath, opts, true, out, errOut, tracker)
 		}(absPath)
 	}
 
@@ -220,9 +222,10 @@ func RunWithContext(ctx context.Context, paths []string, opts models.LookOptions
 // decrementing wg when finished.
 func Look(wg *sync.WaitGroup, path string, parameters models.LookParameters, channel chan<- models.File) {
 	defer wg.Done()
-	sem := newSemaphore(parameters.Workers)
+	dirSem := newSemaphore(parameters.Workers)
+	hashSem := newSemaphore(parameters.Workers)
 	tracker := newProgressTracker(parameters.OnProgress)
-	walkDir(context.Background(), sem, path, parameters, true, channel, newSyncWriter(os.Stderr), tracker)
+	walkDir(context.Background(), dirSem, hashSem, path, parameters, true, channel, newSyncWriter(os.Stderr), tracker)
 	tracker.finish()
 }
 
@@ -230,7 +233,8 @@ func Look(wg *sync.WaitGroup, path string, parameters models.LookParameters, cha
 // combined directory hash when opts.Hash is enabled.
 func walkDir(
 	ctx context.Context,
-	sem chan struct{},
+	dirSem chan struct{},
+	hashSem chan struct{},
 	dirPath string,
 	opts models.LookOptions,
 	emit bool,
@@ -245,7 +249,7 @@ func walkDir(
 
 	var entries []os.DirEntry
 	var readErr error
-	withSemaphore(sem, func() {
+	withSemaphore(dirSem, func() {
 		entries, readErr = os.ReadDir(dirPath)
 	})
 	if readErr != nil {
@@ -278,7 +282,7 @@ func walkDir(
 					subWg.Add(1)
 					go func(p string) {
 						defer subWg.Done()
-						walkDir(ctx, sem, p, opts, true, out, errOut, tracker)
+						walkDir(ctx, dirSem, hashSem, p, opts, true, out, errOut, tracker)
 					}(subPath)
 				}
 			}
@@ -287,7 +291,7 @@ func walkDir(
 			if ctx.Err() != nil {
 				break
 			}
-			tracker.addCompleted(itemByteSize(item), item.GetAbsolutePath())
+			tracker.addCompleted(itemByteSize(item), dirPath)
 			if emit {
 				out <- item
 			}
@@ -309,11 +313,11 @@ func walkDir(
 			}
 			absItemPath := items[idx].GetAbsolutePath()
 			if items[idx].Dir {
-				items[idx].Hash = walkDir(ctx, sem, absItemPath, opts, emit && opts.Recursive, out, errOut, tracker)
+				items[idx].Hash = walkDir(ctx, dirSem, hashSem, absItemPath, opts, emit && opts.Recursive, out, errOut, tracker)
 				if ctx.Err() != nil {
 					return
 				}
-				tracker.addCompleted(0, absItemPath)
+				tracker.addCompleted(0, dirPath)
 				if emit {
 					out <- items[idx]
 				}
@@ -322,7 +326,7 @@ func walkDir(
 			if h, ok := lookupKnownFileHash(opts, absItemPath, items[idx]); ok {
 				items[idx].Hash = h
 			} else {
-				withSemaphore(sem, func() {
+				withSemaphore(hashSem, func() {
 					if ctx.Err() != nil {
 						return
 					}
@@ -334,7 +338,7 @@ func walkDir(
 			if ctx.Err() != nil {
 				return
 			}
-			tracker.addCompleted(itemByteSize(items[idx]), absItemPath)
+			tracker.addCompleted(itemByteSize(items[idx]), dirPath)
 			if emit {
 				out <- items[idx]
 			}

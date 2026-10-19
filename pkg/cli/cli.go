@@ -26,6 +26,7 @@ type ScanCmd struct {
 	Workers    int    `help:"Number of concurrent workers for directory traversal and hashing (0 uses CPU count)." default:"0" name:"workers"`
 	Live       bool   `help:"Keep monitoring the directory for changes using filesystem events (implies --hash)." name:"live"`
 	NoProgress bool   `help:"Disable the progress bar during recursive (-R) scans." name:"no-progress"`
+	ScanMode   bool   `help:"Run in scan mode (recursive hash scan with progress bar only, no file listing on screen)." name:"scan"`
 
 	ServerURL string `help:"Upload the scan to a go-ls server URL (e.g. http://localhost:8080)." env:"GOLS_SERVER_URL" name:"server"`
 	ScanID    string `help:"Optional custom ID for the scan (auto-generated if omitted)." name:"scan-id"`
@@ -57,11 +58,11 @@ func (s ScanCmd) ToLookOptions() models.LookOptions {
 		algo = models.HashSHA256
 	}
 
-	// Uploading to the server, resuming a scan, running --compare, or monitoring with --live automatically enables hashing.
-	enableHash := s.Hash || s.Compare || s.ServerURL != "" || s.Resume != "" || s.Live
+	// Running in scan mode, uploading to the server, resuming a scan, running --compare, or monitoring with --live automatically enables hashing.
+	enableHash := s.Hash || s.ScanMode || s.Compare || s.ServerURL != "" || s.Resume != "" || s.ScanID != "" || s.Live
 
 	return models.LookOptions{
-		Recursive:  s.Recursive,
+		Recursive:  s.Recursive || s.ScanMode,
 		ShowHidden: s.ShowHidden,
 		Hash:       enableHash,
 		HashAlgo:   algo,
@@ -85,7 +86,7 @@ func (s ScanCmd) ToOutputOptions() models.OutputOptions {
 	return models.OutputOptions{
 		Format:     format,
 		ShowHidden: s.ShowHidden,
-		Hash:       s.Hash || s.Compare || s.Live || s.ServerURL != "" || s.Resume != "",
+		Hash:       s.Hash || s.ScanMode || s.Compare || s.Live || s.ServerURL != "" || s.Resume != "" || s.ScanID != "",
 		NoColor:    s.Color == "never",
 	}
 }
@@ -151,13 +152,24 @@ func HasVersionFlag(args []string) bool {
 }
 
 // NormalizeArgs prepends the default "scan" subcommand when the user invokes go-ls
-// directly with flags or paths (e.g., `go-ls -la --hash` or `go-ls ./pkg`).
+// directly with flags or paths (e.g., `go-ls -la --hash` or `go-ls ./pkg`), and
+// enables --scan mode when the user explicitly invokes `go-ls scan ...`.
 func NormalizeArgs(args []string) []string {
 	if len(args) == 0 {
 		return []string{"scan"}
 	}
 	switch args[0] {
-	case "scan", "scans", "diff", "duplicates", "serve", "version", "-h", "--help", "help", "-v", "--version":
+	case "scan":
+		for _, a := range args[1:] {
+			if a == "--" {
+				break
+			}
+			if a == "--scan" || a == "-h" || a == "--help" {
+				return args
+			}
+		}
+		return append([]string{"scan", "--scan"}, args[1:]...)
+	case "scans", "diff", "duplicates", "serve", "version", "-h", "--help", "help", "-v", "--version":
 		return args
 	default:
 		return append([]string{"scan"}, args...)

@@ -125,7 +125,7 @@ func (w *progressCoordWriter) Write(b []byte) (int, error) {
 	defer w.pb.mu.Unlock()
 
 	if w.pb.barVisible {
-		_, _ = io.WriteString(w.pb.w, "\r\033[K")
+		_, _ = io.WriteString(w.pb.w, "\r\033[K\033[1A\r\033[K")
 		w.pb.barVisible = false
 	}
 
@@ -142,18 +142,25 @@ func (w *progressCoordWriter) Write(b []byte) (int, error) {
 
 func (p *ProgressBar) drawLocked(now time.Time, finalNewline bool) {
 	elapsed := now.Sub(p.startTime)
-	line := FormatProgressBar(p.lastSnap, elapsed, p.noColor)
+	barLine := FormatProgressBar(p.lastSnap, elapsed, p.noColor)
+	statusLine := FormatProgressStatus(p.lastSnap)
+
+	clearSeq := "\r\033[K"
+	if p.barVisible {
+		clearSeq = "\r\033[K\033[1A\r\033[K"
+	}
+
 	if finalNewline {
-		_, _ = fmt.Fprintf(p.w, "\r\033[K%s\n", line)
+		_, _ = fmt.Fprintf(p.w, "%s%s\n\033[K%s\n", clearSeq, barLine, statusLine)
 		p.barVisible = false
 		return
 	}
-	_, _ = fmt.Fprintf(p.w, "\r\033[K%s", line)
+	_, _ = fmt.Fprintf(p.w, "%s%s\n\033[K%s", clearSeq, barLine, statusLine)
 	p.barVisible = true
 	p.lastDraw = now
 }
 
-// FormatProgressBar formats a single-line progress bar string for snap.
+// FormatProgressBar formats the top progress bar line for snap.
 func FormatProgressBar(snap models.ProgressSnapshot, elapsed time.Duration, noColor bool) string {
 	disc := snap.Discovered
 	comp := snap.Completed
@@ -189,7 +196,7 @@ func FormatProgressBar(snap models.ProgressSnapshot, elapsed time.Duration, noCo
 		barStr = c.Sprint(barStr)
 	}
 
-	summary := fmt.Sprintf("[%s] %3d%% | %d/%d items | %d dirs | %s | %s",
+	return fmt.Sprintf("[%s] %3d%% | %d/%d items | %d dirs | %s | %s",
 		barStr,
 		pct,
 		comp,
@@ -198,17 +205,32 @@ func FormatProgressBar(snap models.ProgressSnapshot, elapsed time.Duration, noCo
 		FormatBytes(snap.Bytes),
 		formatElapsed(elapsed),
 	)
+}
 
-	if !snap.Done && snap.Current != "" {
-		base := filepath.Base(snap.Current)
-		if base != "" && base != "." && base != "/" {
-			if len(base) > 28 {
-				base = base[:25] + "..."
-			}
-			summary += " | " + base
-		}
+// FormatProgressStatus formats the second line displayed below the progress bar
+// (e.g. "10/20003 working on folder: mnt/ajlkjas/xpto").
+func FormatProgressStatus(snap models.ProgressSnapshot) string {
+	disc := snap.Discovered
+	comp := snap.Completed
+	if comp > disc {
+		disc = comp
 	}
-	return summary
+	if snap.Done {
+		comp = disc
+	}
+	return fmt.Sprintf("%d/%d working on folder: %s", comp, disc, formatWorkingFolder(snap.Current))
+}
+
+func formatWorkingFolder(current string) string {
+	cleaned := strings.TrimSpace(filepath.ToSlash(current))
+	cleaned = strings.TrimPrefix(cleaned, "/")
+	if cleaned == "" {
+		cleaned = "."
+	}
+	if len(cleaned) > 72 {
+		cleaned = "..." + cleaned[len(cleaned)-69:]
+	}
+	return cleaned
 }
 
 // FormatBytes formats a byte count into a compact human-readable string.
