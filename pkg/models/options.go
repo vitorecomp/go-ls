@@ -31,6 +31,19 @@ const (
 	FormatJSON OutputFormat = "json"
 )
 
+// ProgressSnapshot captures real-time directory traversal and hashing progress.
+type ProgressSnapshot struct {
+	Discovered int64
+	Completed  int64
+	Dirs       int64
+	Bytes      int64
+	Current    string
+	Done       bool
+}
+
+// ProgressFunc receives live progress snapshots during directory traversal.
+type ProgressFunc func(ProgressSnapshot)
+
 // LookOptions configures how the directory walker discovers and processes files.
 type LookOptions struct {
 	Recursive  bool
@@ -39,6 +52,7 @@ type LookOptions struct {
 	HashAlgo   HashAlgorithm
 	Workers    int
 	Live       bool
+	OnProgress ProgressFunc
 }
 
 // LookParameters is an alias for LookOptions kept for backwards compatibility.

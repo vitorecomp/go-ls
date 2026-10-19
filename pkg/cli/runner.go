@@ -19,7 +19,7 @@ import (
 	"github.com/vitorecomp/go-ls/pkg/store"
 )
 
-const defaultChannelBuffer = 1024
+const defaultChannelBuffer = 8192
 
 // Run executes the scan command locally and optionally uploads the scan to the configured server.
 func (s *ScanCmd) Run() error {
@@ -34,12 +34,25 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 	lookOpts := s.ToLookOptions()
 	outputOpts := s.ToOutputOptions()
 
+	var progressBar *output.ProgressBar
+	lookErrOut := errOut
+	displayOut := out
+	if s.Recursive && !s.NoProgress {
+		progressBar = output.NewProgressBar(errOut, outputOpts.NoColor)
+		lookOpts.OnProgress = progressBar.Update
+		lookErrOut = progressBar.WrapStderr(errOut)
+		displayOut = progressBar.WrapStdout(out)
+	}
+
 	rawChan := make(models.OutputChan, defaultChannelBuffer)
-	go looker.Run(s.Paths, lookOpts, rawChan, errOut)
+	go looker.Run(s.Paths, lookOpts, rawChan, lookErrOut)
 
 	// Pure one-shot local mode when neither --server nor --live is specified.
 	if s.ServerURL == "" && !s.Live {
-		output.WriteOutput(out, rawChan, outputOpts)
+		output.WriteOutput(displayOut, rawChan, outputOpts)
+		if progressBar != nil {
+			progressBar.Finish()
+		}
 		return nil
 	}
 
@@ -55,7 +68,7 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 		displayDone = make(chan struct{})
 		go func() {
 			defer close(displayDone)
-			output.WriteOutput(out, displayChan, outputOpts)
+			output.WriteOutput(displayOut, displayChan, outputOpts)
 		}()
 	}
 
@@ -69,6 +82,10 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 	if displayChan != nil {
 		close(displayChan)
 		<-displayDone
+	}
+
+	if progressBar != nil {
+		progressBar.Finish()
 	}
 
 	hostname, err := os.Hostname()
@@ -98,10 +115,13 @@ func (s *ScanCmd) RunWithContext(ctx context.Context, out, errOut io.Writer) err
 
 	fmt.Fprintf(errOut, "Watching %v for changes (press Ctrl+C to stop)...\n", s.Paths)
 
+	watchOpts := lookOpts
+	watchOpts.OnProgress = nil
+
 	return looker.Watch(
 		ctx,
 		s.Paths,
-		lookOpts,
+		watchOpts,
 		collected,
 		looker.DefaultDebounceInterval,
 		errOut,

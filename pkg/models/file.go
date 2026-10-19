@@ -2,6 +2,7 @@ package models
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,14 +12,24 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 )
 
+const hashReadBufferSize = 128 * 1024
+
 var (
-	uidCache sync.Map // map[string]user.User
-	gidCache sync.Map // map[string]user.Group
+	uidCache sync.Map // map[uint32]user.User
+	gidCache sync.Map // map[uint32]user.Group
+
+	hashBufPool = sync.Pool{
+		New: func() any {
+			buf := make([]byte, hashReadBufferSize)
+			return &buf
+		},
+	}
 
 	// ErrDirectoryChecksum is returned when attempting to compute a file checksum on a directory.
 	ErrDirectoryChecksum = errors.New("cannot calculate checksum of a directory")
@@ -117,10 +128,20 @@ func (f *File) GetTimeStamps() {
 		return
 	}
 
-	atime := time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
-	ctime := time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec)
-	f.AccessAt = atime.Format(time.RFC3339)
-	f.CreatedAt = ctime.Format(time.RFC3339)
+	mSec := modTime.Unix()
+	mNsec := int64(modTime.Nanosecond())
+	if stat.Atim.Sec == mSec && stat.Atim.Nsec == mNsec {
+		f.AccessAt = f.UpdatedAt
+	} else {
+		f.AccessAt = time.Unix(stat.Atim.Sec, stat.Atim.Nsec).Format(time.RFC3339)
+	}
+	if stat.Ctim.Sec == mSec && stat.Ctim.Nsec == mNsec {
+		f.CreatedAt = f.UpdatedAt
+	} else if stat.Ctim.Sec == stat.Atim.Sec && stat.Ctim.Nsec == stat.Atim.Nsec {
+		f.CreatedAt = f.AccessAt
+	} else {
+		f.CreatedAt = time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec).Format(time.RFC3339)
+	}
 }
 
 // FillOwnerAndGroup resolves the Unix UID and GID of the file into Owner and Group,
@@ -139,29 +160,28 @@ func (f *File) FillOwnerAndGroup() {
 		return
 	}
 
-	uid := fmt.Sprint(stat.Uid)
-	gid := fmt.Sprint(stat.Gid)
-
-	if cachedUser, found := uidCache.Load(uid); found {
+	if cachedUser, found := uidCache.Load(stat.Uid); found {
 		f.Owner = cachedUser.(user.User)
 	} else {
-		if fileOwner, err := user.LookupId(uid); err == nil && fileOwner != nil {
+		uidStr := strconv.FormatUint(uint64(stat.Uid), 10)
+		if fileOwner, err := user.LookupId(uidStr); err == nil && fileOwner != nil {
 			f.Owner = *fileOwner
 		} else {
-			f.Owner = user.User{Uid: uid, Username: uid}
+			f.Owner = user.User{Uid: uidStr, Username: uidStr}
 		}
-		uidCache.Store(uid, f.Owner)
+		uidCache.Store(stat.Uid, f.Owner)
 	}
 
-	if cachedGroup, found := gidCache.Load(gid); found {
+	if cachedGroup, found := gidCache.Load(stat.Gid); found {
 		f.Group = cachedGroup.(user.Group)
 	} else {
-		if group, err := user.LookupGroupId(gid); err == nil && group != nil {
+		gidStr := strconv.FormatUint(uint64(stat.Gid), 10)
+		if group, err := user.LookupGroupId(gidStr); err == nil && group != nil {
 			f.Group = *group
 		} else {
-			f.Group = user.Group{Gid: gid, Name: gid}
+			f.Group = user.Group{Gid: gidStr, Name: gidStr}
 		}
-		gidCache.Store(gid, f.Group)
+		gidCache.Store(stat.Gid, f.Group)
 	}
 }
 
@@ -177,6 +197,9 @@ func (f *File) GetAbsolutePath() string {
 		joined = filepath.Join(f.BasePath, f.FileInfo.Name())
 	}
 
+	if filepath.IsAbs(joined) {
+		return joined
+	}
 	absPath, err := filepath.Abs(joined)
 	if err != nil {
 		return filepath.Clean(joined)
@@ -209,12 +232,18 @@ func (f *File) ComputeHash(algo HashAlgorithm) error {
 		hasher = crc32.NewIEEE()
 	}
 
-	if _, err := io.Copy(hasher, file); err != nil {
-		f.Hash = ""
-		return fmt.Errorf("hashing file %s: %w", fileAbsoluteName, err)
+	if f.FileInfo == nil || f.FileInfo.Size() > 0 {
+		bufPtr := hashBufPool.Get().(*[]byte)
+		_, copyErr := io.CopyBuffer(hasher, file, *bufPtr)
+		hashBufPool.Put(bufPtr)
+		if copyErr != nil {
+			f.Hash = ""
+			return fmt.Errorf("hashing file %s: %w", fileAbsoluteName, copyErr)
+		}
 	}
 
-	f.Hash = fmt.Sprintf("%x", hasher.Sum(nil))
+	var sumBuf [sha256.Size]byte
+	f.Hash = hex.EncodeToString(hasher.Sum(sumBuf[:0]))
 	return nil
 }
 
@@ -235,7 +264,8 @@ func (f *File) ComputeDirHash(algo HashAlgorithm, childHashes []string) string {
 		_, _ = io.WriteString(hasher, h)
 	}
 
-	f.Hash = fmt.Sprintf("%x", hasher.Sum(nil))
+	var sumBuf [sha256.Size]byte
+	f.Hash = hex.EncodeToString(hasher.Sum(sumBuf[:0]))
 	return f.Hash
 }
 

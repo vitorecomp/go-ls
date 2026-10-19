@@ -9,9 +9,109 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
+
+const progressEmitIntervalNs = int64(25 * time.Millisecond)
+
+type progressTracker struct {
+	fn         models.ProgressFunc
+	discovered atomic.Int64
+	completed  atomic.Int64
+	dirs       atomic.Int64
+	bytes      atomic.Int64
+	lastEmitNs atomic.Int64
+	lastPath   atomic.Value // string
+	mu         sync.Mutex
+}
+
+func newProgressTracker(fn models.ProgressFunc) *progressTracker {
+	if fn == nil {
+		return nil
+	}
+	return &progressTracker{fn: fn}
+}
+
+func (p *progressTracker) addDir(path string) {
+	if p == nil {
+		return
+	}
+	p.dirs.Add(1)
+	p.maybeEmit(path, false)
+}
+
+func (p *progressTracker) addDiscovered(n int64, path string) {
+	if p == nil || n <= 0 {
+		return
+	}
+	p.discovered.Add(n)
+	p.maybeEmit(path, false)
+}
+
+func (p *progressTracker) addCompleted(size int64, path string) {
+	if p == nil {
+		return
+	}
+	if size > 0 {
+		p.bytes.Add(size)
+	}
+	p.completed.Add(1)
+	p.maybeEmit(path, false)
+}
+
+func (p *progressTracker) finish() {
+	if p == nil {
+		return
+	}
+	p.maybeEmit("", true)
+}
+
+func (p *progressTracker) maybeEmit(current string, done bool) {
+	if current != "" {
+		p.lastPath.Store(current)
+	}
+	if !done {
+		now := time.Now().UnixNano()
+		prev := p.lastEmitNs.Load()
+		if prev != 0 && now-prev < progressEmitIntervalNs {
+			return
+		}
+		if !p.lastEmitNs.CompareAndSwap(prev, now) {
+			return
+		}
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	disc := p.discovered.Load()
+	comp := p.completed.Load()
+	if done && comp > disc {
+		disc = comp
+	}
+	if current == "" {
+		if v, ok := p.lastPath.Load().(string); ok {
+			current = v
+		}
+	}
+	p.fn(models.ProgressSnapshot{
+		Discovered: disc,
+		Completed:  comp,
+		Dirs:       p.dirs.Load(),
+		Bytes:      p.bytes.Load(),
+		Current:    current,
+		Done:       done,
+	})
+}
+
+func itemByteSize(f models.File) int64 {
+	if f.FileInfo == nil || f.Dir {
+		return 0
+	}
+	return f.FileInfo.Size()
+}
 
 type syncWriter struct {
 	mu sync.Mutex
@@ -39,6 +139,7 @@ func (s *syncWriter) Write(p []byte) (int, error) {
 func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut io.Writer) {
 	errOut = newSyncWriter(errOut)
 	sem := newSemaphore(opts.Workers)
+	tracker := newProgressTracker(opts.OnProgress)
 
 	var wg sync.WaitGroup
 	for _, rawPath := range paths {
@@ -55,6 +156,7 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 		}
 
 		if !info.IsDir() {
+			tracker.addDiscovered(1, absPath)
 			f := models.NewFile(filepath.Dir(absPath), info)
 			if opts.Hash {
 				withSemaphore(sem, func() {
@@ -63,6 +165,7 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 					}
 				})
 			}
+			tracker.addCompleted(itemByteSize(f), absPath)
 			out <- f
 			continue
 		}
@@ -70,11 +173,12 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 		wg.Add(1)
 		go func(dirPath string) {
 			defer wg.Done()
-			walkDir(sem, dirPath, opts, true, out, errOut)
+			walkDir(sem, dirPath, opts, true, out, errOut, tracker)
 		}(absPath)
 	}
 
 	wg.Wait()
+	tracker.finish()
 	close(out)
 }
 
@@ -83,7 +187,9 @@ func Run(paths []string, opts models.LookOptions, out chan<- models.File, errOut
 func Look(wg *sync.WaitGroup, path string, parameters models.LookParameters, channel chan<- models.File) {
 	defer wg.Done()
 	sem := newSemaphore(parameters.Workers)
-	walkDir(sem, path, parameters, true, channel, newSyncWriter(os.Stderr))
+	tracker := newProgressTracker(parameters.OnProgress)
+	walkDir(sem, path, parameters, true, channel, newSyncWriter(os.Stderr), tracker)
+	tracker.finish()
 }
 
 // walkDir scans dirPath, optionally emits discovered entries to out, and returns the
@@ -95,7 +201,10 @@ func walkDir(
 	emit bool,
 	out chan<- models.File,
 	errOut io.Writer,
+	tracker *progressTracker,
 ) string {
+	tracker.addDir(dirPath)
+
 	var entries []os.DirEntry
 	var readErr error
 	withSemaphore(sem, func() {
@@ -106,34 +215,35 @@ func walkDir(
 		return ""
 	}
 
-	items := make([]models.File, 0, len(entries))
+	visibleEntries := make([]os.DirEntry, 0, len(entries))
 	for _, entry := range entries {
-		name := entry.Name()
-		if !opts.ShowHidden && strings.HasPrefix(name, ".") {
+		if !opts.ShowHidden && strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-
-		info, err := entry.Info()
-		if err != nil {
-			fmt.Fprintf(errOut, "go-ls: cannot stat %q in %q: %v\n", name, dirPath, err)
-			continue
-		}
-
-		items = append(items, models.NewFile(dirPath, info))
+		visibleEntries = append(visibleEntries, entry)
 	}
 
-	// Fast path when hashing is disabled: stream entries immediately.
+	items := buildDirItems(dirPath, visibleEntries, errOut)
+	tracker.addDiscovered(int64(len(items)), dirPath)
+
+	// Fast path when hashing is disabled: fan out subdirectories immediately across CPU cores,
+	// then stream entries in parallel.
 	if !opts.Hash {
 		var subWg sync.WaitGroup
-		for _, item := range items {
-			if item.Dir && opts.Recursive {
-				subPath := item.GetAbsolutePath()
-				subWg.Add(1)
-				go func(p string) {
-					defer subWg.Done()
-					walkDir(sem, p, opts, true, out, errOut)
-				}(subPath)
+		if opts.Recursive {
+			for i := range items {
+				if items[i].Dir {
+					subPath := items[i].GetAbsolutePath()
+					subWg.Add(1)
+					go func(p string) {
+						defer subWg.Done()
+						walkDir(sem, p, opts, true, out, errOut, tracker)
+					}(subPath)
+				}
 			}
+		}
+		for _, item := range items {
+			tracker.addCompleted(itemByteSize(item), item.GetAbsolutePath())
 			if emit {
 				out <- item
 			}
@@ -149,9 +259,10 @@ func walkDir(
 		childWg.Add(1)
 		go func(idx int) {
 			defer childWg.Done()
+			absItemPath := items[idx].GetAbsolutePath()
 			if items[idx].Dir {
-				subPath := items[idx].GetAbsolutePath()
-				items[idx].Hash = walkDir(sem, subPath, opts, emit && opts.Recursive, out, errOut)
+				items[idx].Hash = walkDir(sem, absItemPath, opts, emit && opts.Recursive, out, errOut, tracker)
+				tracker.addCompleted(0, absItemPath)
 				return
 			}
 			withSemaphore(sem, func() {
@@ -159,6 +270,7 @@ func walkDir(
 					fmt.Fprintf(errOut, "go-ls: %v\n", err)
 				}
 			})
+			tracker.addCompleted(itemByteSize(items[idx]), absItemPath)
 		}(i)
 	}
 	childWg.Wait()
@@ -175,12 +287,82 @@ func walkDir(
 	return dirHolder.ComputeDirHash(opts.HashAlgo, childHashes)
 }
 
+func buildDirItems(dirPath string, visibleEntries []os.DirEntry, errOut io.Writer) []models.File {
+	n := len(visibleEntries)
+	if n == 0 {
+		return nil
+	}
+
+	numCPU := runtime.GOMAXPROCS(0)
+	if n < 64 || numCPU <= 1 {
+		items := make([]models.File, 0, n)
+		for _, entry := range visibleEntries {
+			info, err := entry.Info()
+			if err != nil {
+				fmt.Fprintf(errOut, "go-ls: cannot stat %q in %q: %v\n", entry.Name(), dirPath, err)
+				continue
+			}
+			items = append(items, models.NewFile(dirPath, info))
+		}
+		return items
+	}
+
+	slots := make([]models.File, n)
+	valid := make([]bool, n)
+	var wg sync.WaitGroup
+	chunkSize := (n + numCPU - 1) / numCPU
+	for w := 0; w < numCPU; w++ {
+		start := w * chunkSize
+		if start >= n {
+			break
+		}
+		end := start + chunkSize
+		if end > n {
+			end = n
+		}
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			for idx := lo; idx < hi; idx++ {
+				entry := visibleEntries[idx]
+				info, err := entry.Info()
+				if err != nil {
+					fmt.Fprintf(errOut, "go-ls: cannot stat %q in %q: %v\n", entry.Name(), dirPath, err)
+					continue
+				}
+				slots[idx] = models.NewFile(dirPath, info)
+				valid[idx] = true
+			}
+		}(start, end)
+	}
+	wg.Wait()
+
+	items := make([]models.File, 0, n)
+	for idx := 0; idx < n; idx++ {
+		if valid[idx] {
+			items = append(items, slots[idx])
+		}
+	}
+	return items
+}
+
+// DefaultWorkers returns the optimal parallel worker count for the current machine,
+// scaling with all available logical CPUs to saturate both CPU hashing and filesystem I/O.
+func DefaultWorkers() int {
+	cpus := runtime.NumCPU()
+	if runtime.GOMAXPROCS(0) < cpus {
+		runtime.GOMAXPROCS(cpus)
+	}
+	workers := cpus * 4
+	if workers < 16 {
+		workers = 16
+	}
+	return workers
+}
+
 func newSemaphore(workers int) chan struct{} {
 	if workers <= 0 {
-		workers = runtime.NumCPU()
-		if workers < 4 {
-			workers = 4
-		}
+		workers = DefaultWorkers()
 	}
 	return make(chan struct{}, workers)
 }

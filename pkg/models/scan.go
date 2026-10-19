@@ -1,8 +1,12 @@
 package models
 
 import (
+	"cmp"
 	"path/filepath"
-	"sort"
+	"runtime"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -146,12 +150,19 @@ type DuplicateGroup struct {
 // FileToScanEntry converts a discovered File into a portable ScanEntry with a path
 // relative to rootPath.
 func FileToScanEntry(rootPath string, f File) ScanEntry {
-	absPath := f.GetAbsolutePath()
-	absRoot, err := filepath.Abs(rootPath)
-	if err != nil {
-		absRoot = filepath.Clean(rootPath)
+	absRoot := rootPath
+	if !filepath.IsAbs(absRoot) {
+		if resolved, err := filepath.Abs(rootPath); err == nil {
+			absRoot = resolved
+		} else {
+			absRoot = filepath.Clean(rootPath)
+		}
 	}
+	return fileToScanEntryCleanRoot(absRoot, f)
+}
 
+func fileToScanEntryCleanRoot(absRoot string, f File) ScanEntry {
+	absPath := f.GetAbsolutePath()
 	relPath, err := filepath.Rel(absRoot, absPath)
 	if err != nil || relPath == "" || relPath == "." {
 		if f.FileInfo != nil {
@@ -198,23 +209,63 @@ func BuildScanRecord(id, tag, hostname, rootPath string, algo HashAlgorithm, fil
 		algo = HashCRC32
 	}
 
-	entries := make([]ScanEntry, 0, len(files))
+	n := len(files)
+	entries := make([]ScanEntry, n)
 	var totalFiles, totalDirs int
 	var totalBytes int64
 
-	for _, f := range files {
-		entry := FileToScanEntry(absRoot, f)
-		entries = append(entries, entry)
-		if entry.IsDir {
-			totalDirs++
-		} else {
-			totalFiles++
-			totalBytes += entry.Size
+	numCPU := runtime.GOMAXPROCS(0)
+	if n >= 512 && numCPU > 1 {
+		var atomicFiles, atomicDirs, atomicBytes atomic.Int64
+		var wg sync.WaitGroup
+		chunkSize := (n + numCPU - 1) / numCPU
+		for w := 0; w < numCPU; w++ {
+			start := w * chunkSize
+			if start >= n {
+				break
+			}
+			end := start + chunkSize
+			if end > n {
+				end = n
+			}
+			wg.Add(1)
+			go func(lo, hi int) {
+				defer wg.Done()
+				var localFiles, localDirs, localBytes int64
+				for idx := lo; idx < hi; idx++ {
+					entry := fileToScanEntryCleanRoot(absRoot, files[idx])
+					entries[idx] = entry
+					if entry.IsDir {
+						localDirs++
+					} else {
+						localFiles++
+						localBytes += entry.Size
+					}
+				}
+				atomicFiles.Add(localFiles)
+				atomicDirs.Add(localDirs)
+				atomicBytes.Add(localBytes)
+			}(start, end)
+		}
+		wg.Wait()
+		totalFiles = int(atomicFiles.Load())
+		totalDirs = int(atomicDirs.Load())
+		totalBytes = atomicBytes.Load()
+	} else {
+		for idx, f := range files {
+			entry := fileToScanEntryCleanRoot(absRoot, f)
+			entries[idx] = entry
+			if entry.IsDir {
+				totalDirs++
+			} else {
+				totalFiles++
+				totalBytes += entry.Size
+			}
 		}
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].RelPath < entries[j].RelPath
+	slices.SortFunc(entries, func(a, b ScanEntry) int {
+		return cmp.Compare(a.RelPath, b.RelPath)
 	})
 
 	// Compute root hash from direct children of rootPath (or all entries in sorted order).
@@ -310,8 +361,8 @@ func ComputeDiff(base, target ScanRecord) *DiffReport {
 		}
 	}
 
-	sort.Slice(changes, func(i, j int) bool {
-		return changes[i].RelPath < changes[j].RelPath
+	slices.SortFunc(changes, func(a, b DiffItem) int {
+		return cmp.Compare(a.RelPath, b.RelPath)
 	})
 
 	return &DiffReport{

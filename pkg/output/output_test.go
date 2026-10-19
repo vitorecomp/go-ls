@@ -188,3 +188,38 @@ func TestWriteDiffAndDuplicatesReports(t *testing.T) {
 		t.Errorf("unexpected decoded live event: %+v", decodedLive)
 	}
 }
+
+func TestProgressBarRenderAndStdoutCoordination(t *testing.T) {
+	var errBuf, outBuf bytes.Buffer
+	pb := NewProgressBar(&errBuf, true)
+	wrappedOut := pb.WrapStdout(&outBuf)
+
+	pb.Update(models.ProgressSnapshot{
+		Discovered: 10,
+		Completed:  5,
+		Dirs:       2,
+		Bytes:      2048,
+		Current:    "/tmp/sample/file.go",
+	})
+
+	if _, err := wrappedOut.Write([]byte("file.go\n")); err != nil {
+		t.Fatalf("wrappedOut.Write failed: %v", err)
+	}
+
+	pb.Update(models.ProgressSnapshot{
+		Discovered: 10,
+		Completed:  10,
+		Dirs:       2,
+		Bytes:      4096,
+		Done:       true,
+	})
+	pb.Finish()
+
+	errText := errBuf.String()
+	if !strings.Contains(errText, "100% | 10/10 items | 2 dirs | 4.0 KB") {
+		t.Errorf("expected completed 100%% progress bar in stderr output, got %q", errText)
+	}
+	if outBuf.String() != "file.go\n" {
+		t.Errorf("unexpected stdout output: %q", outBuf.String())
+	}
+}

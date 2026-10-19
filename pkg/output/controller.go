@@ -1,12 +1,15 @@
 package output
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/vitorecomp/go-ls/pkg/models"
 )
+
+const outputBufferSize = 64 * 1024
 
 // Output consumes discovered files from outputChannel and prints them to os.Stdout
 // according to outputParameters.
@@ -16,25 +19,35 @@ func Output(outputChannel <-chan models.File, outputParameters models.OutputPara
 
 // WriteOutput consumes discovered files from outputChannel and writes formatted output to w.
 func WriteOutput(w io.Writer, outputChannel <-chan models.File, opts models.OutputOptions) {
+	bw := bufio.NewWriterSize(w, outputBufferSize)
+	defer func() {
+		_ = bw.Flush()
+	}()
+
 	printedDefault := false
+	count := 0
 	for workingFile := range outputChannel {
 		switch opts.Format {
 		case models.FormatLong:
-			List(w, workingFile, opts.ShowHidden, opts.NoColor, opts.Hash)
+			List(bw, workingFile, opts.ShowHidden, opts.NoColor, opts.Hash)
 		case models.FormatCompare:
-			Comparable(w, workingFile)
+			Comparable(bw, workingFile)
 		case models.FormatJSON:
-			JSON(w, workingFile)
+			JSON(bw, workingFile)
 		case models.FormatDefault, "":
-			Default(w, workingFile, opts.ShowHidden, opts.NoColor)
+			Default(bw, workingFile, opts.ShowHidden, opts.NoColor)
 			printedDefault = true
 		default:
-			Default(w, workingFile, opts.ShowHidden, opts.NoColor)
+			Default(bw, workingFile, opts.ShowHidden, opts.NoColor)
 			printedDefault = true
+		}
+		count++
+		if count&0x3f == 0 {
+			_ = bw.Flush()
 		}
 	}
 
 	if printedDefault {
-		fmt.Fprintln(w)
+		fmt.Fprintln(bw)
 	}
 }

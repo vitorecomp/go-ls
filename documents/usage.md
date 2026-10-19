@@ -207,6 +207,7 @@ go run . -R --hash --json ./pkg
 | `--json` | — | — | `false` | Output newline-delimited JSON (NDJSON) records (or JSON summary when uploading). |
 | `--color` | — | — | `auto` | Colorize console output (`auto`, `always`, `never`). |
 | `--workers` | — | — | `0` | Number of concurrent traversal/hashing workers (`0` uses CPU count, minimum `4`). |
+| `--no-progress` | — | — | `false` | Disable the progress bar rendered to `stderr` during recursive (`-R`) scans. |
 | `--live` | — | — | `false` | Continuously monitor directories via OS filesystem events (`fsnotify`; implies `--hash`). |
 | `--server` | — | `GOLS_SERVER_URL` | `""` | Upload completed scan snapshots to a `go-ls` server URL (e.g. `http://localhost:8080`). |
 | `--scan-id` | — | — | `""` | Optional custom snapshot ID for the uploaded scan (auto-generated if omitted). |

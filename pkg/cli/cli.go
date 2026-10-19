@@ -22,6 +22,7 @@ type ScanCmd struct {
 	Color      string `help:"Colorize the output (auto, always, never)." enum:"auto,always,never" default:"auto" name:"color"`
 	Workers    int    `help:"Number of concurrent workers for directory traversal and hashing (0 uses CPU count)." default:"0" name:"workers"`
 	Live       bool   `help:"Keep monitoring the directory for changes using filesystem events (implies --hash)." name:"live"`
+	NoProgress bool   `help:"Disable the progress bar during recursive (-R) scans." name:"no-progress"`
 
 	ServerURL string `help:"Upload the completed scan to a go-ls server URL (e.g. http://localhost:8080)." env:"GOLS_SERVER_URL" name:"server"`
 	ScanID    string `help:"Optional custom ID for the uploaded scan (auto-generated if omitted)." name:"scan-id"`
@@ -33,11 +34,16 @@ type ScanCmd struct {
 
 // ToLookOptions converts ScanCmd flags into models.LookOptions.
 func (s ScanCmd) ToLookOptions() models.LookOptions {
+	cpus := runtime.NumCPU()
+	if runtime.GOMAXPROCS(0) < cpus {
+		runtime.GOMAXPROCS(cpus)
+	}
+
 	workers := s.Workers
 	if workers <= 0 {
-		workers = runtime.NumCPU()
-		if workers < 4 {
-			workers = 4
+		workers = cpus * 4
+		if workers < 16 {
+			workers = 16
 		}
 	}
 

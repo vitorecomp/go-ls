@@ -62,14 +62,21 @@ func TestRunRecursiveAndDirectoryHashing(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var lastSnap models.ProgressSnapshot
 	files, errLog := collectFiles([]string{tmpDir}, models.LookOptions{
 		Recursive: true,
 		Hash:      true,
 		HashAlgo:  models.HashCRC32,
 		Workers:   2,
+		OnProgress: func(snap models.ProgressSnapshot) {
+			lastSnap = snap
+		},
 	})
 	if errLog != "" {
 		t.Errorf("unexpected error output: %s", errLog)
+	}
+	if !lastSnap.Done || lastSnap.Completed != 3 || lastSnap.Dirs != 2 || lastSnap.Bytes != 6 {
+		t.Errorf("unexpected final ProgressSnapshot: %+v", lastSnap)
 	}
 	if len(files) != 3 {
 		t.Fatalf("expected 3 entries (root.txt, nested, child.txt), got %d", len(files))
